@@ -4,7 +4,7 @@ int other_func() {
    int a = 5;
    while (a > 0)
    {
-      puts("Boba");
+      puts("a");
       a -= 1;
    }
    return a;
@@ -12,10 +12,10 @@ int other_func() {
 
 int main() {
    int b = other_func();
-   puts("biba");
+   puts("b");
    int c = other_func();
    int g = b + c;
-   puts("ZeliBoba");
+   puts("c");
    return g;
 }
 
