@@ -84,12 +84,12 @@ impl IrTextRepr for nodes::Quadriplet {
 impl IrTextRepr for nodes::Ssa {
     fn to_ir_string(&self) -> String {
         match self {
-            nodes::Ssa::Quadriplet(quadriplet) => quadriplet.to_ir_string(),
+            nodes::Ssa::Quadriplet(quadriplet) =>format!("\t{}", quadriplet.to_ir_string()),
             nodes::Ssa::Return { value } => match value.as_ref() {
                 Some((addr, width)) => {
-                    format!("return {} {}", width.to_ir_string(), addr.to_ir_string())
+                    format!("\treturn {} {}", width.to_ir_string(), addr.to_ir_string())
                 }
-                None => format!("return"),
+                None => format!("\treturn"),
             },
             nodes::Ssa::Assignment {
                 dest,
@@ -98,14 +98,14 @@ impl IrTextRepr for nodes::Ssa {
             } => {
                 // TODO: lvalue cannot be constant
                 format!(
-                    "{} ={} {}",
+                    "\t{} ={} {}",
                     dest.to_ir_string(),
                     width.to_ir_string(),
                     source.to_ir_string()
                 )
             }
             nodes::Ssa::Param { value, width, number } => {
-                format!("param{} {} {}", number, width.to_ir_string(), value.to_ir_string())
+                format!("\tparam{} {} {}", number, width.to_ir_string(), value.to_ir_string())
             }
             nodes::Ssa::Call {
                 dest,
@@ -114,14 +114,14 @@ impl IrTextRepr for nodes::Ssa {
             } => match dest {
                 Some((addr, width)) => {
                     format!(
-                        "{} ={} call {}",
+                        "\t{} ={} call {}",
                         addr.to_ir_string(),
                         width.to_ir_string(),
                         func.to_ir_string()
                     )
                 }
                 None => {
-                    format!("call {}", func.to_ir_string())
+                    format!("\tcall {}", func.to_ir_string())
                 }
             },
             nodes::Ssa::Label(label) => {
@@ -133,20 +133,20 @@ impl IrTextRepr for nodes::Ssa {
                 false_target,
             } => {
                 format!(
-                    "branch {}: {} {}",
+                    "\tbranch {}: {} {}",
                     cond.to_ir_string(),
                     true_target.to_ir_string(),
                     false_target.to_ir_string()
                 )
             }
             nodes::Ssa::Jump(label) => {
-                format!("jump {}", label.to_ir_string())
+                format!("\tjump {}", label.to_ir_string())
             },
             nodes::Ssa::Phi {dest,  width, merging } => {
                 let merging_expr = merging.iter().map(| (addr, lab) | {
                     format!("[{}, @{}]", addr.to_ir_string(), lab.to_ir_string())
                 }).collect::<Vec<_>>().join(", ");
-                format!("{} ={} phi {}", dest.to_ir_string(), width.to_ir_string(), merging_expr)
+                format!("\t{} ={} phi {}", dest.to_ir_string(), width.to_ir_string(), merging_expr)
             }
         }
     }

@@ -6,6 +6,7 @@ C Compiler written in rust targeting aarch64 + Mach-O.
 - [x] AST backend
 - [x] Semantic analysis, symbol table
 - [x] Intermediate Representation
+- [x] Single Static Assignment
 - [ ] IR Optimization
 - [x] Assembly codegen
 - [ ] Register Allocation
@@ -45,50 +46,52 @@ int main() {
 }
 ```
 
-IR [(Three-Address Code)](https://en.wikipedia.org/wiki/Three-address_code)
+IR SSA
 
 ```asm
 extern $puts = "puts": (l) -> w
 function w other_func () {
-@start
-%_t0 =w #5
-%a =w %_t0
+@start_function_other_func:
+        %_t0 =w #5
+        %a.0 =w %_t0
 @_l0:
-%_t1 =w %a
-%_t2 =w #0
-%_t3 =w %_t1 > %_t2
-branch %_t3: _l1 _l2
+        %a.1 =w phi [%a.0, @start_function_other_func], [%a.2, @_l1]
+        %_t1 =w %a.1
+        %_t2 =w #0
+        %_t3 =w %_t1 > %_t2
+        branch %_t0: _l1 _l2
 @_l1:
-%_t4 =l s'a'
-param0 l %_t4
-%_t5 =w call %puts
-%_t6 =w #1
-%_t7 =w %a - %_t6
-%a =w %_t7
-jump _l0
+        %_t4 =l s'a'
+        param0 l %_t4
+        %_t5 =w call %puts.0
+        %_t6 =w #1
+        %_t7 =w %a.1 - %_t6
+        %a.2 =w %_t7
+        jump _l0
 @_l2:
-%_t8 =w %a
-return w %_t8
+        %a.3 =w phi [%a.0, @start_function_other_func], [%a.2, @_l1]
+        %_t8 =w %a.3
+        return w %_t8
 }
 
 function w main () {
-@start
-%_t0 =w call %other_func
-%b =w %_t0
-%_t1 =l s'b'
-param0 l %_t1
-%_t2 =w call %puts
-%_t3 =w call %other_func
-%c =w %_t3
-%_t4 =w %b
-%_t5 =w %c
-%_t6 =w %_t4 + %_t5
-%g =w %_t6
-%_t7 =l s'c'
-param0 l %_t7
-%_t8 =w call %puts
-%_t9 =w %g
-return w %_t9
+@start_function_main:
+        %_t0 =w call %other_func.0
+        %b.0 =w %_t0
+        %_t1 =l s'b'
+        param0 l %_t1
+        %_t2 =w call %puts.0
+        %_t3 =w call %other_func.0
+        %c.0 =w %_t3
+        %_t4 =w %b.0
+        %_t5 =w %c.0
+        %_t6 =w %_t4 + %_t5
+        %g.0 =w %_t6
+        %_t7 =l s'c'
+        param0 l %_t7
+        %_t8 =w call %puts.0
+        %_t9 =w %g.0
+        return w %_t9
 }
 ```
 

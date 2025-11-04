@@ -582,12 +582,8 @@ impl SsaBuilder for &ast::WhileStatement {
             false_target: end_label.clone(),
         };
 
-        let before_body_count = state.clone_counts();
-        let body_ssas_temp= self.body.as_ref().visit(symbol_table.clone(), &state.dummy());
 
         let expr_vars = expression_vars(&expr_ssas_temp);
-
-
 
         out.push(nodes::Ssa::Label(cond_label.clone()));
 
@@ -597,7 +593,7 @@ impl SsaBuilder for &ast::WhileStatement {
             let count = state.inc_source_address_count(&var.source_var.get_source());
             nodes::Ssa::Phi { dest: Address::source_count(var.source_var.get_source().to_owned(), count),
                 width: var.width, merging: vec![
-                (var.source_var.clone(), start_label.clone()),
+                (var.source_var.clone(), state.parent_phi_label.clone()),
             ] }
         }));
 
@@ -622,7 +618,6 @@ impl SsaBuilder for &ast::WhileStatement {
         out.push(nodes::Ssa::Label(end_label.clone()));
 
         apply_changes_to_ssa(&changed_vars, &mut out[phi_cond_start..phi_cond_end], start_label.clone());
-
         
         out.extend(changed_vars.iter().map(|var| {
             let count = state.inc_source_address_count(&var.source_var.get_source());

@@ -14,9 +14,9 @@ type BasicBlock = Vec<nodes::Ssa>;
 // }
 
 impl nodes::Label {
-    fn to_asm_label(&self) -> String {
+    fn to_asm_label(&self, func_name: &str) -> String {
         match self {
-            Self::CompilerTemp(ct) => format!("L{}", ct),
+            Self::CompilerTemp(ct) => format!("L_{}_{}", func_name, ct),
             Self::Source(s) => s.as_str().to_owned(),
         }
     }
@@ -98,7 +98,7 @@ fn basic_block_to_asm(
                 result.push(Instruction::Store { width, source: x0, operand: instructions::AddressingMode::stack_offset(dest_var.address.offset()) });
             },
             nodes::Ssa::Label(lab) => {
-                result.push(Instruction::Label(lab.to_asm_label()));
+                result.push(Instruction::Label(lab.to_asm_label(func_name)));
             },
             nodes::Ssa::Branch { cond, true_target, false_target } => {
                 let cond_var = lookup.get(&cond).unwrap();
@@ -106,8 +106,8 @@ fn basic_block_to_asm(
                 let x0 = Register::x0(width);
                 result.push(Instruction::Load { width, dest: x0, operand: instructions::AddressingMode::stack_offset(cond_var.address.offset()) });
                 result.push(Instruction::Cmp { left: x0, right: instructions::RValue::Immediate(1) });
-                result.push(Instruction::Branch(instructions::Branch::cond_eq(true_target.clone())));
-                result.push(Instruction::Branch(instructions::Branch::cond_not_eq(false_target.clone())));
+                result.push(Instruction::Branch(instructions::Branch::cond_eq((true_target.clone(), func_name))));
+                result.push(Instruction::Branch(instructions::Branch::cond_not_eq((false_target.clone(), func_name))));
             },
             nodes::Ssa::Return { value } => {
                 if let Some((val, width)) = value {
@@ -120,7 +120,7 @@ fn basic_block_to_asm(
                 result.push(Instruction::Branch(instructions::Branch::uncond(instructions::Label(format!("return_{}", func_name)))))
             },
             nodes::Ssa::Jump(target) => {
-                result.push(Instruction::Branch(instructions::Branch::uncond(target.clone())));
+                result.push(Instruction::Branch(instructions::Branch::uncond((target.clone(), func_name))));
             },
             nodes::Ssa::Param { number, value, width } => {
                 let reg = match *number {
@@ -141,7 +141,7 @@ fn basic_block_to_asm(
                         result.push(Instruction::Branch(instructions::Branch::branch_link_register(x0)));
                     }, 
                     nodes::Address::Source(source) => {
-                        result.push(Instruction::Branch(instructions::Branch::branch_link(instructions::Label(format!("_{}.{}", source.0, source.1)))));
+                        result.push(Instruction::Branch(instructions::Branch::branch_link(instructions::Label(format!("_{}", source.0)))));
                     },
                     nodes::Address::Constant(_)  => {
                         panic!("Cannot call a constant! Unless maybe blr?");
@@ -152,7 +152,9 @@ fn basic_block_to_asm(
                     let val_info = lookup.get(&val).unwrap();
                     result.push(Instruction::Store { width: *width, source: x0, operand: instructions::AddressingMode::stack_offset(val_info.address.offset()) });
                 }
-            }
+            },
+            
+            nodes::Ssa::Phi { dest, width, merging } => (),
 
             _ => todo!(),
         }

@@ -59,6 +59,9 @@ impl SymbolLookup {
                 nodes::Ssa::Quadriplet(quad) => {
                     (&quad.dest, &quad.width)
                 },
+                nodes::Ssa::Phi { dest, width, merging: _ } => {
+                    (dest, width)
+                },
 
                 nodes::Ssa::Call { dest, func: _, num_params: _ } => {
                     if let Some((dest, width)) = dest {

@@ -153,11 +153,11 @@ pub enum RValue {
 pub struct Symbol(pub String);
 pub struct Label(pub String);
 
-impl From<nodes::Label> for Label {
-    fn from(value: nodes::Label) -> Self {
+impl From<(nodes::Label, &str)> for Label {
+    fn from(value: (nodes::Label, &str)) -> Self {
         match value {
-            nodes::Label::CompilerTemp(ct) => Label(format!("L{}", ct)),
-            nodes::Label::Source(s) => Label(s.as_str().to_owned()),
+            (nodes::Label::CompilerTemp(ct), fname) => Label(format!("L_{}_{}", fname, ct)),
+            (nodes::Label::Source(s), _) => Label(s.as_str().to_owned()),
         }
     }
 }
