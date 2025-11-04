@@ -76,8 +76,8 @@ pub fn graphviz_function(declaration: &nodes::FunctionDef) -> String
         }
         for i in block.iter().skip(1) {
             match i {
-                nodes::Ssa::Phi { dest: _, width: _, merging } => {
-                    for (addr, lab) in merging {
+                nodes::Ssa::Phi(phi) => {
+                    for (addr, lab) in &phi.merging {
                         res.push_str(&format!("{} -> {}[label=\"{} -> phi\"];\n", lab.to_ir_string(), lab_ir, addr.to_ir_string()));
                     }
                 }

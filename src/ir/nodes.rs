@@ -96,6 +96,13 @@ impl Label {
 }
 
 #[derive(Debug, Clone)]
+pub struct PhiFunction {
+    pub dest: Address,
+    pub width: Width,
+    pub merging: Vec<(Address, Label)>,
+}
+
+#[derive(Debug, Clone)]
 pub enum Ssa {
     // Quadriplet
     Quadriplet(Quadriplet),
@@ -106,11 +113,7 @@ pub enum Ssa {
         width: Width,
     },
 
-    Phi {
-        dest: Address,
-        width: Width,
-        merging: Vec<(Address, Label)>,
-    },
+    Phi(PhiFunction),
 
     // Function parameters: param value
     Param {
@@ -143,6 +146,7 @@ pub enum Ssa {
     },
 }
 
+#[derive(Debug, Clone)]
 pub struct FunctionDef {
     pub name: String,
     pub return_width: Width,
@@ -150,6 +154,7 @@ pub struct FunctionDef {
     pub body: Vec<Ssa>,
 }
 
+#[derive(Debug, Clone)]
 pub enum ToplevelDeclaration {
     Function {
         storage_class: StorageClass,
@@ -169,6 +174,7 @@ impl ToplevelDeclaration {
     }
 }
 
+#[derive(Debug, Clone)]
 pub enum ToplevelItem {
     Function(FunctionDef),
     Declaration(ToplevelDeclaration),

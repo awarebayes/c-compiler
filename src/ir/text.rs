@@ -142,11 +142,11 @@ impl IrTextRepr for nodes::Ssa {
             nodes::Ssa::Jump(label) => {
                 format!("\tjump {}", label.to_ir_string())
             },
-            nodes::Ssa::Phi {dest,  width, merging } => {
-                let merging_expr = merging.iter().map(| (addr, lab) | {
+            nodes::Ssa::Phi(phi) => {
+                let merging_expr = phi.merging.iter().map(| (addr, lab) | {
                     format!("[{}, @{}]", addr.to_ir_string(), lab.to_ir_string())
                 }).collect::<Vec<_>>().join(", ");
-                format!("\t{} ={} phi {}", dest.to_ir_string(), width.to_ir_string(), merging_expr)
+                format!("\t{} ={} phi {}", phi.dest.to_ir_string(), phi.width.to_ir_string(), merging_expr)
             }
         }
     }

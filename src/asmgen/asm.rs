@@ -154,7 +154,7 @@ fn basic_block_to_asm(
                 }
             },
             
-            nodes::Ssa::Phi { dest: _, width: _, merging: _ } => panic!("Phi functions should be eliminated at this stage!"),
+            nodes::Ssa::Phi(_) => panic!("Phi functions should be eliminated at this stage!"),
             _ => todo!(),
         }
     }

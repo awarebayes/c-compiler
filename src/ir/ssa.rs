@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use crate::common::Width;
-use crate::ir::nodes::{self, Address, FunctionDef, Label, ToplevelItem};
+use crate::ir::nodes::{self, Address, FunctionDef, Label, PhiFunction, ToplevelItem};
 use crate::semantic_analysis::{SymbolKind, SymbolType};
 use crate::{parsing::ast, semantic_analysis::SymbolTableRef};
 
@@ -409,26 +409,26 @@ fn generate_phi_if_else(
             (Some(var_if), Some(var_else)) => {
                 let var_name = var_if.source_var.get_source();
                 let count = state.inc_source_address_count(var_name);
-                res_ssa.push(nodes::Ssa::Phi { dest: Address::source_count(var_name.to_owned(), count) , width: var_if.width, merging: vec![
+                res_ssa.push(nodes::Ssa::Phi (PhiFunction { dest: Address::source_count(var_name.to_owned(), count) , width: var_if.width, merging: vec![
                     (var_if.source_var.clone(), true_label.clone()),
                     (var_else.source_var.clone(), false_label.clone()),
-                ]});
+                ]}));
             },
             (Some(var_if), None) => {
                 let var_name = var_if.source_var.get_source();
                 let count = state.inc_source_address_count(var_name);
-                res_ssa.push(nodes::Ssa::Phi { dest: Address::source_count(var_name.to_owned(), count) , width: var_if.width, merging: vec![
+                res_ssa.push(nodes::Ssa::Phi (PhiFunction { dest: Address::source_count(var_name.to_owned(), count) , width: var_if.width, merging: vec![
                     (var_if.source_var.clone(), true_label.clone()),
                     (Address::source_count(var_name.to_owned(), counts_before.get(var_name).cloned().unwrap_or_default() ), state.parent_phi_label.clone())
-                ]});
+                ]}));
             },
             (None, Some(var_else)) => {
                 let var_name = var_else.source_var.get_source();
                 let count = state.inc_source_address_count(var_name);
-                res_ssa.push(nodes::Ssa::Phi { dest: Address::source_count(var_name.to_owned(), count) , width: var_else.width, merging: vec![
+                res_ssa.push(nodes::Ssa::Phi( PhiFunction { dest: Address::source_count(var_name.to_owned(), count) , width: var_else.width, merging: vec![
                     (Address::source_count(var_name.to_owned(), counts_before.get(var_name).cloned().unwrap_or_default() ), state.parent_phi_label.clone()),
                     (var_else.source_var.clone(), false_label.clone()),
-                ]});
+                ]}));
             },
             (None, None) => {}
         }
@@ -478,10 +478,10 @@ impl SsaBuilder for &ast::IfStatement {
 
                 out.extend(changed_phi_vars.iter().map(|var| {
                     let count = state.inc_source_address_count(&var.source_var.get_source());
-                    nodes::Ssa::Phi { dest: Address::source_count(var.source_var.get_source().to_owned(), count) , width: var.width, merging: vec![
+                    nodes::Ssa::Phi( PhiFunction { dest: Address::source_count(var.source_var.get_source().to_owned(), count) , width: var.width, merging: vec![
                         (var.source_var.clone(), true_label.clone()),
                         (Address::source_count(var.source_var.get_source().to_owned(), counts_before.get(var.source_var.get_source()).cloned().unwrap_or_default() ), state.parent_phi_label.clone())
-                    ]}
+                    ]})
                 }));
             }
             Some(body) => {
@@ -537,12 +537,12 @@ impl SsaBuilder for &ast::IfStatement {
 fn apply_changes_to_ssa(changed_vars: &[ChangedPhiVar], ir: &mut [nodes::Ssa], label: Label) {
     for n in ir {
         for cw in changed_vars {
-            if let nodes::Ssa::Phi { dest, width: _, merging } = n {
-                if cw.source_var.get_source() != dest.get_source() {
+            if let nodes::Ssa::Phi(phi) = n {
+                if cw.source_var.get_source() != phi.dest.get_source() {
                     continue;
                 }
 
-                merging.push((
+                phi.merging.push((
                     cw.source_var.clone(),
                     label.clone()
                 ));
@@ -575,14 +575,6 @@ impl SsaBuilder for &ast::WhileStatement {
         state.inc_label_cnt();
         state.inc_label_cnt();
 
-
-        let loop_branch = nodes::Ssa::Branch {
-            cond: nodes::Address::compiler_temp(state.last_var()),
-            true_target: start_label.clone(),
-            false_target: end_label.clone(),
-        };
-
-
         let expr_vars = expression_vars(&expr_ssas_temp);
 
         out.push(nodes::Ssa::Label(cond_label.clone()));
@@ -591,10 +583,10 @@ impl SsaBuilder for &ast::WhileStatement {
 
         out.extend(expr_vars.iter().map(|var| {
             let count = state.inc_source_address_count(&var.source_var.get_source());
-            nodes::Ssa::Phi { dest: Address::source_count(var.source_var.get_source().to_owned(), count),
+            nodes::Ssa::Phi(PhiFunction { dest: Address::source_count(var.source_var.get_source().to_owned(), count),
                 width: var.width, merging: vec![
                 (var.source_var.clone(), state.parent_phi_label.clone()),
-            ] }
+            ] })
         }));
 
         let expr_ssas=
@@ -602,6 +594,13 @@ impl SsaBuilder for &ast::WhileStatement {
                 .expression
                 .as_ref()
                 .visit(symbol_table.clone(), state);
+
+
+        let loop_branch = nodes::Ssa::Branch {
+            cond: nodes::Address::compiler_temp(state.last_var()),
+            true_target: start_label.clone(),
+            false_target: end_label.clone(),
+        };
         
         let phi_cond_end = out.len();
 
@@ -621,11 +620,11 @@ impl SsaBuilder for &ast::WhileStatement {
         
         out.extend(changed_vars.iter().map(|var| {
             let count = state.inc_source_address_count(&var.source_var.get_source());
-            nodes::Ssa::Phi { dest: Address::source_count(var.source_var.get_source().to_owned(), count),
+            nodes::Ssa::Phi(PhiFunction { dest: Address::source_count(var.source_var.get_source().to_owned(), count),
                 width: var.width, merging: vec![
                 (Address::source_count(var.source_var.get_source().to_owned(), before_cond_count.get(var.source_var.get_source()).cloned().unwrap_or_default() ), state.parent_phi_label.clone()),
                 (var.source_var.clone(), start_label.clone()),
-            ] }
+            ] })
         }));
 
         out
