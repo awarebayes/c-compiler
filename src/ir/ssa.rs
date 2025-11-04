@@ -57,16 +57,24 @@ impl State {
         *self.var_count.borrow_mut() += 1;
     }
 
+    fn clone_counts(&self) -> HashMap<String, usize> {
+        self.source_counts.borrow().clone()
+    }
+
     fn inc_label_cnt(&self) {
         *self.label_count.borrow_mut() += 1;
     }
 
     fn inc_source_address_count(&self, source_address: &str) -> usize {
         let mut counts=  self.source_counts.borrow_mut();
-        // Todo: remove to_owned string copy
-        let entry = counts.entry(source_address.to_owned()).or_default();
-        *entry += 1;
-        *entry
+        if !counts.contains_key(source_address) {
+            counts.insert(source_address.to_owned(), 0);
+            0
+        } else {
+            let count = counts.get_mut(source_address).unwrap();
+            *count += 1;
+            *count
+        }
     }
 
 
@@ -163,6 +171,7 @@ fn expression_width(symbol_table: SymbolTableRef, expression: &ast::Expression) 
     }
 }
 
+#[derive(Debug, Clone)]
 struct ChangedPhiVar {
     source_var: Address,
     compiler_temp: Address,
@@ -350,6 +359,61 @@ impl SsaBuilder for &ast::Expression {
     }
 }
 
+fn generate_phi_if_else(
+    changed_if: &[ChangedPhiVar], 
+    changed_else: &[ChangedPhiVar],
+    counts_before: &HashMap<String, usize>,
+    state: &State,
+    true_label: Label,
+    false_label: Label,
+) -> Vec<nodes::Ssa> {
+    let mut res_ssa = vec![];
+    let mut groupby_source_var: HashMap<String, (Option<ChangedPhiVar>, Option<ChangedPhiVar>)> = HashMap::new();
+    for i in changed_if.iter().chain(changed_else.iter()) {
+        groupby_source_var.insert(i.source_var.get_source().to_owned(), (None, None));
+    }
+
+    for i in changed_if.iter() {
+        groupby_source_var.get_mut(i.source_var.get_source()).unwrap().0 = Some(i.clone());
+    }
+
+    for i in changed_else.iter() {
+        groupby_source_var.get_mut(i.source_var.get_source()).unwrap().1 = Some(i.clone());
+    }
+
+    for (var_if, var_else) in groupby_source_var.values() {
+        match (var_if, var_else) {
+            (Some(var_if), Some(var_else)) => {
+                let var_name = var_if.source_var.get_source();
+                let count = state.inc_source_address_count(var_name);
+                res_ssa.push(nodes::Ssa::Phi { dest: Address::source_count(var_name.to_owned(), count) , width: var_if.width, merging: vec![
+                    (var_if.source_var.clone(), true_label.clone()),
+                    (var_else.source_var.clone(), false_label.clone()),
+                ]});
+            },
+            (Some(var_if), None) => {
+                let var_name = var_if.source_var.get_source();
+                let count = state.inc_source_address_count(var_name);
+                res_ssa.push(nodes::Ssa::Phi { dest: Address::source_count(var_name.to_owned(), count) , width: var_if.width, merging: vec![
+                    (var_if.source_var.clone(), true_label.clone()),
+                    (Address::source_count(var_name.to_owned(), counts_before.get(var_name).cloned().unwrap_or_default() ), state.parent_phi_label.clone())
+                ]});
+            },
+            (None, Some(var_else)) => {
+                let var_name = var_else.source_var.get_source();
+                let count = state.inc_source_address_count(var_name);
+                res_ssa.push(nodes::Ssa::Phi { dest: Address::source_count(var_name.to_owned(), count) , width: var_else.width, merging: vec![
+                    (Address::source_count(var_name.to_owned(), counts_before.get(var_name).cloned().unwrap_or_default() ), state.parent_phi_label.clone()),
+                    (var_else.source_var.clone(), false_label.clone()),
+                ]});
+            },
+            (None, None) => {}
+        }
+    }
+
+    res_ssa
+}
+
 impl SsaBuilder for &ast::IfStatement {
     fn visit(
         &self,
@@ -378,6 +442,8 @@ impl SsaBuilder for &ast::IfStatement {
                 state.inc_label_cnt();
                 state.inc_label_cnt();
 
+                let counts_before = state.clone_counts();
+
                 out.push(nodes::Ssa::Label(true_label.clone()));
 
                 let true_ssas =
@@ -388,10 +454,11 @@ impl SsaBuilder for &ast::IfStatement {
                 out.push(nodes::Ssa::Label(false_label));
 
                 out.extend(changed_phi_vars.iter().map(|var| {
-                    nodes::Ssa::Phi { dest: var.source_var.clone(), width: var.width, merging: vec![
-                        (var.compiler_temp.clone(), true_label.clone()),
-                        (var.source_var.clone(), state.parent_phi_label.clone())
-                    ] }
+                    let count = state.inc_source_address_count(&var.source_var.get_source());
+                    nodes::Ssa::Phi { dest: Address::source_count(var.source_var.get_source().to_owned(), count) , width: var.width, merging: vec![
+                        (var.source_var.clone(), true_label.clone()),
+                        (Address::source_count(var.source_var.get_source().to_owned(), counts_before.get(var.source_var.get_source()).cloned().unwrap_or_default() ), state.parent_phi_label.clone())
+                    ]}
                 }));
             }
             Some(body) => {
@@ -400,6 +467,8 @@ impl SsaBuilder for &ast::IfStatement {
                         .expression
                         .as_ref()
                         .visit(symbol_table.clone(), &state.clone());
+
+                let counts_before = state.clone_counts();
 
                 let true_label = nodes::Label::compiler_temp(state.label_count());
                 let false_label = nodes::Label::compiler_temp(state.label_count() + 1);
@@ -414,20 +483,27 @@ impl SsaBuilder for &ast::IfStatement {
                     true_target: true_label.clone(),
                     false_target: false_label.clone(),
                 });
-                out.push(nodes::Ssa::Label(true_label));
+                out.push(nodes::Ssa::Label(true_label.clone()));
 
                 let true_ssas =
                     self.body.as_ref().visit(symbol_table.clone(), state);
 
+                let changed_true = changed_phi_vars(&true_ssas);
+
                 out.extend(true_ssas);
                 out.push(nodes::Ssa::Jump(end_label.clone()));
-                out.push(nodes::Ssa::Label(false_label));
+                out.push(nodes::Ssa::Label(false_label.clone()));
 
                 let false_ssas =
                     body.as_ref().visit(symbol_table.clone(), state);
 
+                let changed_false = changed_phi_vars(&false_ssas);
+
                 out.extend(false_ssas);
-                out.push(nodes::Ssa::Label(end_label));
+                out.push(nodes::Ssa::Label(end_label.clone()));
+
+                out.extend(generate_phi_if_else(&changed_true, &changed_false, &counts_before, state, true_label, false_label))
+
             }
         }
 
