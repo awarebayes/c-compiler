@@ -7,7 +7,7 @@ use crate::common::StorageClass;
 use crate::common::Width;
 use crate::ir::nodes;
 
-type BasicBlock = Vec<nodes::Tac>;
+type BasicBlock = Vec<nodes::Ssa>;
 
 // fn address_to_asm_str(adress: &nodes::Address, lookup: &SymbolLookup) -> String {
 //     match address 
@@ -23,14 +23,14 @@ impl nodes::Label {
 }
 
 fn basic_block_to_asm(
-    block: &[nodes::Tac],
+    block: &[nodes::Ssa],
     func_name: &str,
     lookup: &SymbolLookup,
 ) -> Vec<instructions::Instruction> {
     let mut result = vec![];
     for b in block {
         match b {
-            nodes::Tac::Assignment {
+            nodes::Ssa::Assignment {
                 dest,
                 source,
                 width,
@@ -74,7 +74,7 @@ fn basic_block_to_asm(
                     });
                 }
             },
-            nodes::Tac::Quadriplet(quad) => {
+            nodes::Ssa::Quadriplet(quad) => {
                 let width = quad.width;
                 let left_var = lookup.get(&quad.left).unwrap();
                 let right_var = lookup.get(quad.right.as_ref().unwrap()).unwrap();
@@ -97,10 +97,10 @@ fn basic_block_to_asm(
 
                 result.push(Instruction::Store { width, source: x0, operand: instructions::AddressingMode::stack_offset(dest_var.address.offset()) });
             },
-            nodes::Tac::Label(lab) => {
+            nodes::Ssa::Label(lab) => {
                 result.push(Instruction::Label(lab.to_asm_label()));
             },
-            nodes::Tac::Branch { cond, true_target, false_target } => {
+            nodes::Ssa::Branch { cond, true_target, false_target } => {
                 let cond_var = lookup.get(&cond).unwrap();
                 let width = cond_var.width;
                 let x0 = Register::x0(width);
@@ -109,7 +109,7 @@ fn basic_block_to_asm(
                 result.push(Instruction::Branch(instructions::Branch::cond_eq(true_target.clone())));
                 result.push(Instruction::Branch(instructions::Branch::cond_not_eq(false_target.clone())));
             },
-            nodes::Tac::Return { value } => {
+            nodes::Ssa::Return { value } => {
                 if let Some((val, width)) = value {
                     let x0 = Register::x0(*width);
                     let val_info = lookup.get(&val).unwrap();
@@ -119,10 +119,10 @@ fn basic_block_to_asm(
 
                 result.push(Instruction::Branch(instructions::Branch::uncond(instructions::Label(format!("return_{}", func_name)))))
             },
-            nodes::Tac::Jump(target) => {
+            nodes::Ssa::Jump(target) => {
                 result.push(Instruction::Branch(instructions::Branch::uncond(target.clone())));
             },
-            nodes::Tac::Param { number, value, width } => {
+            nodes::Ssa::Param { number, value, width } => {
                 let reg = match *number {
                     0 => Register::x0(*width),
                     1 => Register::x1(*width),
@@ -132,7 +132,7 @@ fn basic_block_to_asm(
                 let var = lookup.get(value).unwrap();
                 result.push(Instruction::Load { width: *width, dest: reg, operand: instructions::AddressingMode::stack_offset(var.address.offset()) });
             },
-            nodes::Tac::Call { dest, func, num_params: _ } => {
+            nodes::Ssa::Call { dest, func, num_params: _ } => {
                 match func {
                     nodes::Address::CompilerTemp(_) => {
                         let x0 = Register::x0(Width::Long);
@@ -160,14 +160,14 @@ fn basic_block_to_asm(
     result
 }
 
-fn ir_to_basic_blocks(ir: &[nodes::Tac]) -> Vec<BasicBlock> {
+fn ir_to_basic_blocks(ir: &[nodes::Ssa]) -> Vec<BasicBlock> {
     let mut blocks = vec![];
     let mut current_block = vec![];
 
     for node in ir {
         match node {
-            nodes::Tac::Label(_) |
-            nodes::Tac::Return { value: _ } => {
+            nodes::Ssa::Label(_) |
+            nodes::Ssa::Return { value: _ } => {
                 if !current_block.is_empty() {
                     blocks.push(current_block);
                     current_block = vec![];
@@ -182,7 +182,7 @@ fn ir_to_basic_blocks(ir: &[nodes::Tac]) -> Vec<BasicBlock> {
     blocks
 }
 
-pub fn convert_function_body_ir_to_asm(ir: &[nodes::Tac], func_name: &str, global_lookup: &SymbolLookup) -> Vec<instructions::Instruction> {
+pub fn convert_function_body_ir_to_asm(ir: &[nodes::Ssa], func_name: &str, global_lookup: &SymbolLookup) -> Vec<instructions::Instruction> {
     let lookup = SymbolLookup::from_fn_body(ir);
 
     let stack_size = lookup.stack_size();

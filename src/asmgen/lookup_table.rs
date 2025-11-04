@@ -43,24 +43,24 @@ impl SymbolLookup {
         self.lookup.values().map(|x| x.width.to_bytes()).sum::<usize>().next_multiple_of(STACK_ALIGN)
     }
 
-    pub fn from_fn_body(ir: &[nodes::Tac]) -> Self {
+    pub fn from_fn_body(ir: &[nodes::Ssa]) -> Self {
         let mut offset = 0;
         let mut lookup = HashMap::new();
         for n in ir {
 
             let (addr, width) = match n {
-                nodes::Tac::Assignment {
+                nodes::Ssa::Assignment {
                     dest,
                     source: _,
                     width,
                 } => {
                     (dest, width)
                 },
-                nodes::Tac::Quadriplet(quad) => {
+                nodes::Ssa::Quadriplet(quad) => {
                     (&quad.dest, &quad.width)
                 },
 
-                nodes::Tac::Call { dest, func: _, num_params: _ } => {
+                nodes::Ssa::Call { dest, func: _, num_params: _ } => {
                     if let Some((dest, width)) = dest {
                         (dest, width)
                     } else {
@@ -114,7 +114,7 @@ impl SymbolLookup {
 
                     for b in func.body.iter() {
                         match &b {
-                            nodes::Tac::Assignment { dest: _, source, width: _ } => {
+                            nodes::Ssa::Assignment { dest: _, source, width: _ } => {
                                 match &source {
                                     nodes::Address::CompilerTemp(_) |
                                     nodes::Address::Source(_) |

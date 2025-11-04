@@ -22,13 +22,13 @@ fn main() -> Result<(), Box<dyn Error>> {
     println!("Parsed tree: {:#?}", unit);
     println!("Parsed symbol table: {:#?}", &symbol_table);
 
-    let tac = ir::build_tac(&unit, symbol_table.clone());
-    let tac_text = ir::into_text(&tac);
+    let ssa = ir::build_ssa(&unit, symbol_table.clone());
+    let ssa_text = ir::into_text(&ssa);
 
     println!("--- IR ---");
-    println!("{}", tac_text);
+    println!("{}", ssa_text);
 
-    let asm = asmgen::convert_unit_to_asm(&tac);
+    let asm = asmgen::convert_unit_to_asm(&ssa);
     let asm_text = asmgen::asm_into_text(&asm);
 
     println!("--- ASM ---");

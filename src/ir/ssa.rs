@@ -21,13 +21,13 @@ impl State {
     }
 }
 
-trait TacBuilder {
+trait SsaBuilder {
     fn visit(
         &self,
         symbol_table: SymbolTableRef,
         state: State,
         extra: Option<VisitExtra>,
-    ) -> (Vec<nodes::Tac>, State);
+    ) -> (Vec<nodes::Ssa>, State);
 }
 
 fn apply_assignment_to_exp(
@@ -37,14 +37,14 @@ fn apply_assignment_to_exp(
     exp: &ast::Expression,
     assigment_type: &ast::AssignmentType,
     extra: Option<VisitExtra>,
-) -> (Vec<nodes::Tac>, State) {
-    let (mut new_tacs, new_state) = exp.visit(symbol_table, state, extra);
+) -> (Vec<nodes::Ssa>, State) {
+    let (mut new_ssas, new_state) = exp.visit(symbol_table, state, extra);
     state = new_state;
 
     let assignment_op = assigment_type.to_op().map(|op| nodes::Op::from_binop(&op));
     match assignment_op {
         Some(op) => {
-            new_tacs.push(nodes::Tac::Quadriplet(nodes::Quadriplet {
+            new_ssas.push(nodes::Ssa::Quadriplet(nodes::Quadriplet {
                 dest: nodes::Address::compiler_temp(state.var_count),
                 op: op,
                 left: nodes::Address::source(lvalue.0.clone()),
@@ -55,7 +55,7 @@ fn apply_assignment_to_exp(
         }
         None => (),
     }
-    (new_tacs, state)
+    (new_ssas, state)
 }
 
 enum ExpressionWidth {
@@ -111,13 +111,13 @@ fn expression_width(symbol_table: SymbolTableRef, expression: &ast::Expression) 
     }
 }
 
-impl TacBuilder for &ast::Expression {
+impl SsaBuilder for &ast::Expression {
     fn visit(
         &self,
         symbol_table: SymbolTableRef,
         mut state: State,
         extra: Option<VisitExtra>,
-    ) -> (Vec<nodes::Tac>, State) {
+    ) -> (Vec<nodes::Ssa>, State) {
         let mut nodes = vec![];
         match self {
             ast::Expression::Identifier(id) => {
@@ -126,7 +126,7 @@ impl TacBuilder for &ast::Expression {
                 if let Some(ex) = extra {
                     assert_eq!(ex.expression_width, width)
                 }
-                nodes.push(nodes::Tac::Assignment {
+                nodes.push(nodes::Ssa::Assignment {
                     dest: nodes::Address::compiler_temp(state.var_count),
                     source: nodes::Address::source(id.0.clone()),
                     width,
@@ -161,7 +161,7 @@ impl TacBuilder for &ast::Expression {
                 nodes.extend(left_expression);
                 nodes.extend(right_expression);
 
-                nodes.push(nodes::Tac::Quadriplet(nodes::Quadriplet {
+                nodes.push(nodes::Ssa::Quadriplet(nodes::Quadriplet {
                     dest: nodes::Address::CompilerTemp(state.var_count),
                     op: nodes::Op::from_binop(&bin.op),
                     left: nodes::Address::CompilerTemp(left_temp_id),
@@ -171,7 +171,7 @@ impl TacBuilder for &ast::Expression {
                 state.var_count += 1;
             }
             ast::Expression::NumberLiteral(nl) => {
-                nodes.push(nodes::Tac::Assignment {
+                nodes.push(nodes::Ssa::Assignment {
                     dest: nodes::Address::compiler_temp(state.var_count),
                     source: nodes::Address::constant(nodes::AddressConstant::Numeric(
                         nl.0.parse().unwrap(),
@@ -206,7 +206,7 @@ impl TacBuilder for &ast::Expression {
                     if let ExpressionWidth::Some(est) = estimated_width {
                         assert_eq!(width, est);
                     }
-                    let (arg_tac, new_state) = arg.visit(
+                    let (arg_ssa, new_state) = arg.visit(
                         symbol_table.clone(),
                         state,
                         Some(VisitExtra {
@@ -215,25 +215,25 @@ impl TacBuilder for &ast::Expression {
                     );
                     state = new_state;
                     let arg_temp = state.last_var();
-                    nodes.extend(arg_tac);
+                    nodes.extend(arg_ssa);
                     args_temps.push((arg_temp, width))
                 }
 
                 let function_adress = match ce.function.as_ref() {
                     ast::Expression::Identifier(id) => nodes::Address::Source(id.0.clone()),
                     _ => {
-                        let (function_tac, new_state) =
+                        let (function_ssa, new_state) =
                             ce.function.as_ref().visit(symbol_table, state, None);
                         state = new_state;
                         let function_temp = state.last_var();
-                        nodes.extend(function_tac);
+                        nodes.extend(function_ssa);
                         nodes::Address::CompilerTemp(function_temp)
                     }
                 };
 
 
                 for (counter, &(index, width)) in args_temps.iter().enumerate() {
-                    nodes.push(nodes::Tac::Param {
+                    nodes.push(nodes::Ssa::Param {
                         value: nodes::Address::CompilerTemp(index),
                         width: width,
                         number: counter,
@@ -243,7 +243,7 @@ impl TacBuilder for &ast::Expression {
 
                 let return_width = Width::from_type(&symbol.type_info);
 
-                nodes.push(nodes::Tac::Call {
+                nodes.push(nodes::Ssa::Call {
                     dest: Some((nodes::Address::CompilerTemp(state.var_count), return_width)),
                     func: function_adress,
                     num_params: ce.arguments.len(),
@@ -252,7 +252,7 @@ impl TacBuilder for &ast::Expression {
             }
             ast::Expression::Empty => (),
             ast::Expression::StringLiteral(sl) => {
-                nodes.push(nodes::Tac::Assignment {
+                nodes.push(nodes::Ssa::Assignment {
                     dest: nodes::Address::compiler_temp(state.var_count),
                     source: nodes::Address::constant(nodes::AddressConstant::StringLiteral(
                         sl.0.clone(),
@@ -265,7 +265,7 @@ impl TacBuilder for &ast::Expression {
                 ast::LValue::Identifier(id) => {
                     let identifier_type = symbol_table.borrow().query(&id.0).unwrap().type_info;
                     let identifier_width = Width::from_type(&identifier_type);
-                    let (exp_tacs, new_state) = apply_assignment_to_exp(
+                    let (exp_ssas, new_state) = apply_assignment_to_exp(
                         symbol_table,
                         state,
                         id,
@@ -276,8 +276,8 @@ impl TacBuilder for &ast::Expression {
                         }),
                     );
                     state = new_state;
-                    nodes.extend(exp_tacs);
-                    nodes.push(nodes::Tac::Assignment {
+                    nodes.extend(exp_ssas);
+                    nodes.push(nodes::Ssa::Assignment {
                         dest: nodes::Address::Source(id.0.clone()),
                         source: nodes::Address::CompilerTemp(state.last_var()),
                         width: identifier_width,
@@ -290,17 +290,17 @@ impl TacBuilder for &ast::Expression {
     }
 }
 
-impl TacBuilder for &ast::IfStatement {
+impl SsaBuilder for &ast::IfStatement {
     fn visit(
         &self,
         symbol_table: SymbolTableRef,
         mut state: State,
         extra: Option<VisitExtra>,
-    ) -> (Vec<nodes::Tac>, State) {
+    ) -> (Vec<nodes::Ssa>, State) {
         let mut out = vec![];
         match self.else_body.as_ref() {
             None => {
-                let (expr_tacs, new_state) =
+                let (expr_ssas, new_state) =
                     self.condition
                         .expression
                         .as_ref()
@@ -310,25 +310,25 @@ impl TacBuilder for &ast::IfStatement {
 
                 let true_label = nodes::Label::compiler_temp(state.label_count);
                 let false_label = nodes::Label::compiler_temp(state.label_count + 1);
-                out.extend(expr_tacs);
-                out.push(nodes::Tac::Branch {
+                out.extend(expr_ssas);
+                out.push(nodes::Ssa::Branch {
                     cond: nodes::Address::compiler_temp(state.last_var()),
                     true_target: true_label.clone(),
                     false_target: false_label.clone(),
                 });
                 state.label_count += 2;
 
-                out.push(nodes::Tac::Label(true_label));
+                out.push(nodes::Ssa::Label(true_label));
 
-                let (true_tacs, new_state) =
+                let (true_ssas, new_state) =
                     self.body.as_ref().visit(symbol_table.clone(), state, None);
 
                 state = new_state;
-                out.extend(true_tacs);
-                out.push(nodes::Tac::Label(false_label));
+                out.extend(true_ssas);
+                out.push(nodes::Ssa::Label(false_label));
             }
             Some(body) => {
-                let (expr_tacs, new_state) =
+                let (expr_ssas, new_state) =
                     self.condition
                         .expression
                         .as_ref()
@@ -340,28 +340,28 @@ impl TacBuilder for &ast::IfStatement {
                 let end_label = nodes::Label::compiler_temp(state.label_count + 2);
                 state.label_count += 3;
 
-                out.extend(expr_tacs);
-                out.push(nodes::Tac::Branch {
+                out.extend(expr_ssas);
+                out.push(nodes::Ssa::Branch {
                     cond: nodes::Address::compiler_temp(state.last_var()),
                     true_target: true_label.clone(),
                     false_target: false_label.clone(),
                 });
-                out.push(nodes::Tac::Label(true_label));
+                out.push(nodes::Ssa::Label(true_label));
 
-                let (true_tacs, new_state) =
+                let (true_ssas, new_state) =
                     self.body.as_ref().visit(symbol_table.clone(), state, None);
 
                 state = new_state;
-                out.extend(true_tacs);
-                out.push(nodes::Tac::Jump(end_label.clone()));
-                out.push(nodes::Tac::Label(false_label));
+                out.extend(true_ssas);
+                out.push(nodes::Ssa::Jump(end_label.clone()));
+                out.push(nodes::Ssa::Label(false_label));
 
-                let (false_tacs, new_state) =
+                let (false_ssas, new_state) =
                     body.as_ref().visit(symbol_table.clone(), state, None);
 
                 state = new_state;
-                out.extend(false_tacs);
-                out.push(nodes::Tac::Label(end_label));
+                out.extend(false_ssas);
+                out.push(nodes::Ssa::Label(end_label));
             }
         }
 
@@ -369,16 +369,16 @@ impl TacBuilder for &ast::IfStatement {
     }
 }
 
-impl TacBuilder for &ast::WhileStatement {
+impl SsaBuilder for &ast::WhileStatement {
     fn visit(
         &self,
         symbol_table: SymbolTableRef,
         mut state: State,
         extra: Option<VisitExtra>,
-    ) -> (Vec<nodes::Tac>, State) {
+    ) -> (Vec<nodes::Ssa>, State) {
         let mut out = vec![];
 
-        let (expr_tacs, new_state) =
+        let (expr_ssas, new_state) =
             self.condition
                 .expression
                 .as_ref()
@@ -391,33 +391,33 @@ impl TacBuilder for &ast::WhileStatement {
         let end_label = nodes::Label::compiler_temp(state.label_count + 2);
         state.label_count += 3;
 
-        out.push(nodes::Tac::Label(cond_label.clone()));
-        out.extend(expr_tacs);
-        out.push(nodes::Tac::Branch {
+        out.push(nodes::Ssa::Label(cond_label.clone()));
+        out.extend(expr_ssas);
+        out.push(nodes::Ssa::Branch {
             cond: nodes::Address::compiler_temp(state.last_var()),
             true_target: start_label.clone(),
             false_target: end_label.clone(),
         });
-        out.push(nodes::Tac::Label(start_label));
+        out.push(nodes::Ssa::Label(start_label));
 
-        let (body_tacs, new_state) = self.body.as_ref().visit(symbol_table.clone(), state, None);
+        let (body_ssas, new_state) = self.body.as_ref().visit(symbol_table.clone(), state, None);
 
         state = new_state;
-        out.extend(body_tacs);
-        out.push(nodes::Tac::Jump(cond_label));
-        out.push(nodes::Tac::Label(end_label));
+        out.extend(body_ssas);
+        out.push(nodes::Ssa::Jump(cond_label));
+        out.push(nodes::Ssa::Label(end_label));
 
         (out, state)
     }
 }
 
-impl TacBuilder for &ast::Statement {
+impl SsaBuilder for &ast::Statement {
     fn visit(
         &self,
         symbol_table: SymbolTableRef,
         mut state: State,
         extra: Option<VisitExtra>,
-    ) -> (Vec<nodes::Tac>, State) {
+    ) -> (Vec<nodes::Ssa>, State) {
         match self {
             ast::Statement::Declaration(decl) => match decl.declarator.as_ref() {
                 ast::Declarator::FunctionDeclarator(_)
@@ -433,7 +433,7 @@ impl TacBuilder for &ast::Statement {
                         &symbol_table.borrow().query(&var_name).unwrap().type_info,
                     );
 
-                    let (mut expr_tacs, new_state) = expr.visit(
+                    let (mut expr_ssas, new_state) = expr.visit(
                         symbol_table,
                         state,
                         Some(VisitExtra {
@@ -443,40 +443,40 @@ impl TacBuilder for &ast::Statement {
                     state = new_state;
                     let last_id = state.last_var();
 
-                    expr_tacs.push(nodes::Tac::Assignment {
+                    expr_ssas.push(nodes::Ssa::Assignment {
                         dest: nodes::Address::source(var_name.clone()),
                         source: nodes::Address::compiler_temp(last_id),
                         width: width,
                     });
 
-                    (expr_tacs, state)
+                    (expr_ssas, state)
                 }
             },
             ast::Statement::ReturnStatement(rs) => {
                 if matches!(rs.expression, ast::Expression::Empty) {
-                    return (vec![nodes::Tac::Return { value: None }], state);
+                    return (vec![nodes::Ssa::Return { value: None }], state);
                 } else {
                     let expr_width = expression_width(symbol_table.clone(), &rs.expression);
                     if let ExpressionWidth::Some(est) = expr_width {
                         assert_eq!(est, state.return_width.unwrap());
                     }
-                    let (mut expr_tacs, new_state) =
+                    let (mut expr_ssas, new_state) =
                         (&rs.expression).visit(symbol_table, state, None);
                     state = new_state;
                     let expression_res_var = state.last_var();
-                    expr_tacs.push(nodes::Tac::Return {
+                    expr_ssas.push(nodes::Ssa::Return {
                         value: Some((
                             nodes::Address::compiler_temp(expression_res_var),
                             state.return_width.unwrap(),
                         )),
                     });
                     state.var_count += 1;
-                    return (expr_tacs, state);
+                    return (expr_ssas, state);
                 }
             }
             ast::Statement::ExpressionStatement(es) => {
-                let (expr_tacs, new_count) = (&es.expression).visit(symbol_table, state, None);
-                (expr_tacs, new_count)
+                let (expr_ssas, new_count) = (&es.expression).visit(symbol_table, state, None);
+                (expr_ssas, new_count)
             }
             ast::Statement::IfStatement(ifs) => ifs.visit(symbol_table, state, None),
             ast::Statement::WhileStatement(cs) => cs.visit(symbol_table, state, None),
@@ -485,28 +485,28 @@ impl TacBuilder for &ast::Statement {
     }
 }
 
-impl TacBuilder for &ast::CompoundStatement {
+impl SsaBuilder for &ast::CompoundStatement {
     fn visit(
         &self,
         symbol_table: SymbolTableRef,
         mut state: State,
         extra: Option<VisitExtra>,
-    ) -> (Vec<nodes::Tac>, State) {
-        let mut tacs = vec![];
+    ) -> (Vec<nodes::Ssa>, State) {
+        let mut ssas = vec![];
 
         // TODO: ADJUST SYMBOL TABLE HERE!!!!!!!!!!!!!
 
         for statement in &self.items {
-            let (new_tacs, new_var_count) = statement.visit(symbol_table.clone(), state, None);
+            let (new_ssas, new_var_count) = statement.visit(symbol_table.clone(), state, None);
             state = new_var_count;
-            tacs.extend(new_tacs);
+            ssas.extend(new_ssas);
         }
 
-        (tacs, state)
+        (ssas, state)
     }
 }
 
-fn function_tac(fd: &ast::FunctionDefinition, symbol_table: SymbolTableRef) -> ToplevelItem {
+fn function_ssa(fd: &ast::FunctionDefinition, symbol_table: SymbolTableRef) -> ToplevelItem {
     let current_context = symbol_table.borrow().current_scope.clone();
     let global_context = symbol_table.borrow().global_scope.clone();
     let symbols = &current_context.borrow().symbols;
@@ -554,7 +554,7 @@ fn function_tac(fd: &ast::FunctionDefinition, symbol_table: SymbolTableRef) -> T
     })
 }
 
-fn declaration_tac(dec: &ast::Declaration) -> ToplevelItem {
+fn declaration_ssa(dec: &ast::Declaration) -> ToplevelItem {
     match dec.declarator.as_ref() {
         ast::Declarator::FunctionDeclarator(fd) => {
             let function_name = fd.declarator.get_identifier().0;
@@ -589,7 +589,7 @@ fn declaration_tac(dec: &ast::Declaration) -> ToplevelItem {
     }
 }
 
-pub fn build_tac(
+pub fn build_ssa(
     unit: &ast::TranslationUnit,
     symbol_table: SymbolTableRef,
 ) -> Vec<crate::ir::nodes::ToplevelItem> {
@@ -601,14 +601,14 @@ pub fn build_tac(
                 let context = symbol_table.borrow().global_scope.borrow().children
                     [function_decl_count]
                     .clone();
-                toplevels.push(function_tac(
+                toplevels.push(function_ssa(
                     &fd,
                     symbol_table.borrow().new_with_scope(context),
                 ));
                 function_decl_count += 1;
             }
             ast::TopLevelItem::Declaration(dec) => {
-                toplevels.push(declaration_tac(&dec));
+                toplevels.push(declaration_ssa(&dec));
             }
         }
     }

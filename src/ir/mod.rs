@@ -1,6 +1,6 @@
 pub mod nodes;
-mod tac;
+mod ssa;
 mod text;
 
-pub use tac::build_tac;
+pub use ssa::build_ssa;
 pub use text::{IrTextRepr, into_text};

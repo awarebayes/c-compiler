@@ -81,17 +81,17 @@ impl IrTextRepr for nodes::Quadriplet {
     }
 }
 
-impl IrTextRepr for nodes::Tac {
+impl IrTextRepr for nodes::Ssa {
     fn to_ir_string(&self) -> String {
         match self {
-            nodes::Tac::Quadriplet(quadriplet) => quadriplet.to_ir_string(),
-            nodes::Tac::Return { value } => match value.as_ref() {
+            nodes::Ssa::Quadriplet(quadriplet) => quadriplet.to_ir_string(),
+            nodes::Ssa::Return { value } => match value.as_ref() {
                 Some((addr, width)) => {
                     format!("return {} {}", width.to_ir_string(), addr.to_ir_string())
                 }
                 None => format!("return"),
             },
-            nodes::Tac::Assignment {
+            nodes::Ssa::Assignment {
                 dest,
                 source,
                 width,
@@ -104,10 +104,10 @@ impl IrTextRepr for nodes::Tac {
                     source.to_ir_string()
                 )
             }
-            nodes::Tac::Param { value, width, number } => {
+            nodes::Ssa::Param { value, width, number } => {
                 format!("param{} {} {}", number, width.to_ir_string(), value.to_ir_string())
             }
-            nodes::Tac::Call {
+            nodes::Ssa::Call {
                 dest,
                 func,
                 num_params: _,
@@ -124,10 +124,10 @@ impl IrTextRepr for nodes::Tac {
                     format!("call {}", func.to_ir_string())
                 }
             },
-            nodes::Tac::Label(label) => {
+            nodes::Ssa::Label(label) => {
                 format!("@{}:", label.to_ir_string())
             }
-            nodes::Tac::Branch {
+            nodes::Ssa::Branch {
                 cond,
                 true_target,
                 false_target,
@@ -139,7 +139,7 @@ impl IrTextRepr for nodes::Tac {
                     false_target.to_ir_string()
                 )
             }
-            nodes::Tac::Jump(label) => {
+            nodes::Ssa::Jump(label) => {
                 format!("jump {}", label.to_ir_string())
             }
         }

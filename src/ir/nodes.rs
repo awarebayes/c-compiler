@@ -87,7 +87,7 @@ impl Label {
 }
 
 #[derive(Debug, Clone)]
-pub enum Tac {
+pub enum Ssa {
     // Triplet
     Quadriplet(Quadriplet),
 
@@ -132,7 +132,7 @@ pub struct FunctionDef {
     pub name: String,
     pub return_width: Width,
     pub parameters: Vec<(String, Width)>,
-    pub body: Vec<Tac>,
+    pub body: Vec<Ssa>,
 }
 
 pub enum ToplevelDeclaration {
