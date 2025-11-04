@@ -50,7 +50,7 @@ ldr w0, [sp, 48]
 str w0, [sp, 12]
 b L_other_func_0
 L_other_func_2:
-ldr w0, [sp, 12]
+mov w0, 0
 str w0, [sp, 52]
 ldr w0, [sp, 52]
 b return_other_func

@@ -678,7 +678,7 @@ impl SsaBuilder for &ast::Statement {
                         assert_eq!(est, state.return_width.unwrap());
                     }
                     let mut expr_ssas =
-                        (&rs.expression).visit(symbol_table, state);
+                        (&rs.expression).visit(symbol_table, &state.with_expr_width(state.return_width.unwrap()));
                     let expression_res_var = state.last_var();
                     expr_ssas.push(nodes::Ssa::Return {
                         value: Some((

@@ -8,6 +8,7 @@ C Compiler written in rust targeting aarch64 + Mach-O.
 - [x] Intermediate Representation
 - [x] Single Static Assignment
 - [ ] IR Optimization
+- [x] Phi Elimination
 - [x] Assembly codegen
 - [ ] Register Allocation
 

@@ -7,7 +7,7 @@ int other_func() {
       puts("a");
       a -= 1;
    }
-   return a;
+   return 0;
 }
 
 int main() {
