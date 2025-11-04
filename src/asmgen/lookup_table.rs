@@ -30,40 +30,40 @@ pub struct SymbolInfo {
 
 #[derive(Debug, Clone)]
 pub struct SymbolLookup {
-    lookup: HashMap<nodes::Address, SymbolInfo>
+    lookup: HashMap<nodes::Address, SymbolInfo>,
 }
 
 impl SymbolLookup {
-
     pub fn get(&self, key: &nodes::Address) -> Option<&SymbolInfo> {
         self.lookup.get(key)
     }
 
     pub fn stack_size(&self) -> usize {
-        self.lookup.values().map(|x| x.width.to_bytes()).sum::<usize>().next_multiple_of(STACK_ALIGN)
+        self.lookup
+            .values()
+            .map(|x| x.width.to_bytes())
+            .sum::<usize>()
+            .next_multiple_of(STACK_ALIGN)
     }
 
     pub fn from_fn_body(ir: &[nodes::Ssa]) -> Self {
         let mut offset = 0;
         let mut lookup = HashMap::new();
         for n in ir {
-
             let (addr, width) = match n {
                 nodes::Ssa::Assignment {
                     dest,
                     source: _,
                     width,
-                } => {
-                    (dest, width)
-                },
-                nodes::Ssa::Quadriplet(quad) => {
-                    (&quad.dest, &quad.width)
-                },
-                nodes::Ssa::Phi(phi ) => {
-                    (&phi.dest, &phi.width)
-                },
+                } => (dest, width),
+                nodes::Ssa::Quadriplet(quad) => (&quad.dest, &quad.width),
+                nodes::Ssa::Phi(phi) => (&phi.dest, &phi.width),
 
-                nodes::Ssa::Call { dest, func: _, num_params: _ } => {
+                nodes::Ssa::Call {
+                    dest,
+                    func: _,
+                    num_params: _,
+                } => {
                     if let Some((dest, width)) = dest {
                         (dest, width)
                     } else {
@@ -73,7 +73,6 @@ impl SymbolLookup {
 
                 _ => continue,
             };
-
 
             if !lookup.contains_key(addr) {
                 lookup.insert(
@@ -93,18 +92,21 @@ impl SymbolLookup {
         let mut lookup = HashMap::new();
         let mut string_liter_count: usize = 0;
 
-        for toplevel in toplevels { 
+        for toplevel in toplevels {
             match toplevel {
-                nodes::ToplevelItem::Declaration(decl) => {
-                    match decl {
-                        nodes::ToplevelDeclaration::Function { storage_class: _, name, return_width: _, parameters: _ } => {
-                            let addr = nodes::Address::source_count(name.clone(), 0);
-                            let info = SymbolInfo {
-                                address: SymbolAddress::SourceFunction(name.clone()),
-                                width: Width::Long,
-                            };
-                            lookup.insert(addr, info);
-                        }
+                nodes::ToplevelItem::Declaration(decl) => match decl {
+                    nodes::ToplevelDeclaration::Function {
+                        storage_class: _,
+                        name,
+                        return_width: _,
+                        parameters: _,
+                    } => {
+                        let addr = nodes::Address::source_count(name.clone(), 0);
+                        let info = SymbolInfo {
+                            address: SymbolAddress::SourceFunction(name.clone()),
+                            width: Width::Long,
+                        };
+                        lookup.insert(addr, info);
                     }
                 },
                 nodes::ToplevelItem::Function(func) => {
@@ -117,26 +119,29 @@ impl SymbolLookup {
 
                     for b in func.body.iter() {
                         match &b {
-                            nodes::Ssa::Assignment { dest: _, source, width: _ } => {
-                                match &source {
-                                    nodes::Address::CompilerTemp(_) |
-                                    nodes::Address::Source(_) |
-                                    nodes::Address::Constant(nodes::AddressConstant::Numeric(_)) => {},
-                                    nodes::Address::Constant(nodes::AddressConstant::StringLiteral(_)) => {
-                                        let info = SymbolInfo {
-                                            address: SymbolAddress::StringLiteral(string_liter_count),
-                                            width: Width::Long,
-                                        };
-                                        lookup.insert(source.clone(), info);
-                                        string_liter_count += 1;
-                                    }
+                            nodes::Ssa::Assignment {
+                                dest: _,
+                                source,
+                                width: _,
+                            } => match &source {
+                                nodes::Address::CompilerTemp(_)
+                                | nodes::Address::Source(_)
+                                | nodes::Address::Constant(nodes::AddressConstant::Numeric(_)) => {}
+                                nodes::Address::Constant(
+                                    nodes::AddressConstant::StringLiteral(_),
+                                ) => {
+                                    let info = SymbolInfo {
+                                        address: SymbolAddress::StringLiteral(string_liter_count),
+                                        width: Width::Long,
+                                    };
+                                    lookup.insert(source.clone(), info);
+                                    string_liter_count += 1;
                                 }
                             },
                             _ => continue,
                         }
                     }
-                },
-
+                }
             }
         }
         SymbolLookup { lookup }
@@ -145,21 +150,23 @@ impl SymbolLookup {
     pub fn extend_with_global(self, global: Self) -> Self {
         let mut joint_lookup = self.lookup;
         joint_lookup.extend(global.lookup);
-        SymbolLookup { lookup:  joint_lookup }
+        SymbolLookup {
+            lookup: joint_lookup,
+        }
     }
 
     pub fn string_literals_iter(&self) -> impl Iterator<Item = (usize, &str)> {
-        self.lookup.iter().filter_map(|(addr, symbol_info)|  {
-            if let  SymbolAddress::StringLiteral(counter) = symbol_info.address {
+        self.lookup.iter().filter_map(|(addr, symbol_info)| {
+            if let SymbolAddress::StringLiteral(counter) = symbol_info.address {
                 match addr {
-                    nodes::Address::Constant(AddressConstant::StringLiteral(sl)) => Some((counter, sl.as_str())),
-                    _ => panic!("Not a string literal")
+                    nodes::Address::Constant(AddressConstant::StringLiteral(sl)) => {
+                        Some((counter, sl.as_str()))
+                    }
+                    _ => panic!("Not a string literal"),
                 }
             } else {
                 None
             }
         })
     }
-
 }
-

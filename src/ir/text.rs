@@ -84,7 +84,7 @@ impl IrTextRepr for nodes::Quadriplet {
 impl IrTextRepr for nodes::Ssa {
     fn to_ir_string(&self) -> String {
         match self {
-            nodes::Ssa::Quadriplet(quadriplet) =>format!("\t{}", quadriplet.to_ir_string()),
+            nodes::Ssa::Quadriplet(quadriplet) => format!("\t{}", quadriplet.to_ir_string()),
             nodes::Ssa::Return { value } => match value.as_ref() {
                 Some((addr, width)) => {
                     format!("\treturn {} {}", width.to_ir_string(), addr.to_ir_string())
@@ -104,8 +104,17 @@ impl IrTextRepr for nodes::Ssa {
                     source.to_ir_string()
                 )
             }
-            nodes::Ssa::Param { value, width, number } => {
-                format!("\tparam{} {} {}", number, width.to_ir_string(), value.to_ir_string())
+            nodes::Ssa::Param {
+                value,
+                width,
+                number,
+            } => {
+                format!(
+                    "\tparam{} {} {}",
+                    number,
+                    width.to_ir_string(),
+                    value.to_ir_string()
+                )
             }
             nodes::Ssa::Call {
                 dest,
@@ -141,12 +150,22 @@ impl IrTextRepr for nodes::Ssa {
             }
             nodes::Ssa::Jump(label) => {
                 format!("\tjump {}", label.to_ir_string())
-            },
+            }
             nodes::Ssa::Phi(phi) => {
-                let merging_expr = phi.merging.iter().map(| (addr, lab) | {
-                    format!("[{}, @{}]", addr.to_ir_string(), lab.to_ir_string())
-                }).collect::<Vec<_>>().join(", ");
-                format!("\t{} ={} phi {}", phi.dest.to_ir_string(), phi.width.to_ir_string(), merging_expr)
+                let merging_expr = phi
+                    .merging
+                    .iter()
+                    .map(|(addr, lab)| {
+                        format!("[{}, @{}]", addr.to_ir_string(), lab.to_ir_string())
+                    })
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                format!(
+                    "\t{} ={} phi {}",
+                    phi.dest.to_ir_string(),
+                    phi.width.to_ir_string(),
+                    merging_expr
+                )
             }
         }
     }

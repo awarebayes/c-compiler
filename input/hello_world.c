@@ -1,23 +1,12 @@
 extern int puts(char *str);
+extern int printf( const char * format, ... );
 
-int other_func() {
+int main() {
    int a = 5;
    while (a > 0)
    {
-      puts("a");
       a -= 1;
+      printf("A is now %d\n", a);
    }
    return 0;
-}
-
-int main() {
-   int b = other_func();
-   puts("b");
-   int c = 0;
-   if (b == 0) {
-      c = other_func();
-   }
-   int g = b + c;
-   puts("c");
-   return g;
 }

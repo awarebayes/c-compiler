@@ -632,9 +632,15 @@ impl<'a> TryFrom<(&'a Node<'a>, &'a str)> for ast::FunctionDeclarator {
             .map(|n| ast::FunctionParameter::try_from((&n, source)))
             .collect::<Result<Vec<_>, _>>()?;
 
+        let is_variadic = parameters_vec
+            .iter()
+            .find(|x| matches!(x, ast::FunctionParameter::VariadicParameter))
+            .is_some();
+
         Ok(ast::FunctionDeclarator {
             declarator: Box::new(declarator),
             parameters: parameters_vec,
+            is_variadic,
         })
     }
 }

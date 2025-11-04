@@ -65,6 +65,7 @@ pub enum FunctionParameter {
 pub struct FunctionDeclarator {
     pub declarator: Box<Declarator>,
     pub parameters: Vec<FunctionParameter>,
+    pub is_variadic: bool,
 }
 
 #[derive(Debug)]

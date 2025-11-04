@@ -75,7 +75,7 @@ impl Address {
     pub fn get_source(&self) -> &str {
         match self {
             Self::Source(s) => &s.0,
-            _ => panic!("Not a source var")
+            _ => panic!("Not a source var"),
         }
     }
 }
@@ -167,9 +167,12 @@ pub enum ToplevelDeclaration {
 impl ToplevelDeclaration {
     pub fn name(&self) -> String {
         match self {
-            Self::Function { storage_class: _, name, return_width: _, parameters: _ } => {
-                name.clone()
-             }
+            Self::Function {
+                storage_class: _,
+                name,
+                return_width: _,
+                parameters: _,
+            } => name.clone(),
         }
     }
 }

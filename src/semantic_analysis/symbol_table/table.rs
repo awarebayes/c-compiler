@@ -91,8 +91,13 @@ impl TryFrom<&ast::FunctionParameter> for SymbolType {
 
 #[derive(Debug, Clone)]
 pub enum SymbolKind {
-    Variable { is_mutable: bool },
-    Function { parameters: Vec<SymbolType> },
+    Variable {
+        is_mutable: bool,
+    },
+    Function {
+        parameters: Vec<SymbolType>,
+        is_variadic: bool,
+    },
 }
 
 #[derive(Debug, Clone)]

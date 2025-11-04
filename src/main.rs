@@ -1,9 +1,9 @@
 pub mod asmgen;
 pub mod common;
 pub mod ir;
+pub mod opt;
 pub mod parsing;
 pub mod semantic_analysis;
-pub mod opt;
 
 use parsing::{Parser, TreeSitterParser};
 use semantic_analysis::SymbolTable;
@@ -27,7 +27,6 @@ fn main() -> Result<(), Box<dyn Error>> {
     println!("--- IR ---");
     println!("{}", ssa_text);
 
-
     let unopt_ir = "input/graphviz";
     ir::graphviz_unit(&ssa, unopt_ir);
 
@@ -36,7 +35,6 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     println!("--- IR OPT ---");
     println!("{}", ssa_text);
-
 
     let asm = asmgen::convert_unit_to_asm(&opt_ssa);
     let asm_text = asmgen::asm_into_text(&asm);

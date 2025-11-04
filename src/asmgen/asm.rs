@@ -8,9 +8,8 @@ use crate::common::Width;
 use crate::ir::ir_to_basic_blocks;
 use crate::ir::nodes;
 
-
 // fn address_to_asm_str(adress: &nodes::Address, lookup: &SymbolLookup) -> String {
-//     match address 
+//     match address
 // }
 
 impl nodes::Label {
@@ -45,35 +44,61 @@ fn basic_block_to_asm(
                     result.push(Instruction::Store {
                         width: *width,
                         source: Register::x0(*width),
-                        operand: instructions::AddressingMode::stack_offset( result_var.address.offset() ),
+                        operand: instructions::AddressingMode::stack_offset(
+                            result_var.address.offset(),
+                        ),
                     });
-                } else if let nodes::Address::Constant(nodes::AddressConstant::StringLiteral(sl)) = source {
+                } else if let nodes::Address::Constant(nodes::AddressConstant::StringLiteral(sl)) =
+                    source
+                {
                     let result_var = lookup.get(dest).unwrap();
-                    let sl_label = lookup.get(&nodes::Address::Constant(nodes::AddressConstant::StringLiteral(sl.clone()))).unwrap();
+                    let sl_label = lookup
+                        .get(&nodes::Address::Constant(
+                            nodes::AddressConstant::StringLiteral(sl.clone()),
+                        ))
+                        .unwrap();
                     let sl_label_str = match sl_label.address {
                         SymbolAddress::StringLiteral(sl_count) => format!("sl{}", sl_count),
                         _ => panic!(),
                     };
 
                     let x0 = Register::x0(*width);
-                    result.push(Instruction::AdressPage { dest: x0, symbol: Symbol(sl_label_str.clone())});
-                    result.push(Instruction::Arith( instructions::Arith { op: instructions::ArithOp::Add, dest: x0, left: x0, right:  instructions::RValue::SymbolOffset(Symbol(sl_label_str.clone())) } ));
+                    result.push(Instruction::AdressPage {
+                        dest: x0,
+                        symbol: Symbol(sl_label_str.clone()),
+                    });
+                    result.push(Instruction::Arith(instructions::Arith {
+                        op: instructions::ArithOp::Add,
+                        dest: x0,
+                        left: x0,
+                        right: instructions::RValue::SymbolOffset(Symbol(sl_label_str.clone())),
+                    }));
                     result.push(Instruction::Store {
                         width: *width,
                         source: Register::x0(*width),
-                        operand: instructions::AddressingMode::stack_offset( result_var.address.offset() ),
+                        operand: instructions::AddressingMode::stack_offset(
+                            result_var.address.offset(),
+                        ),
                     });
                 } else {
                     let dest_var = lookup.get(dest).unwrap();
                     let source_var = lookup.get(source).unwrap();
-                    result.push(Instruction::Load { width: *width, dest: Register::x0(*width), operand: instructions::AddressingMode::stack_offset(source_var.address.offset()) });
+                    result.push(Instruction::Load {
+                        width: *width,
+                        dest: Register::x0(*width),
+                        operand: instructions::AddressingMode::stack_offset(
+                            source_var.address.offset(),
+                        ),
+                    });
                     result.push(Instruction::Store {
                         width: *width,
                         source: Register::x0(*width),
-                        operand: instructions::AddressingMode::stack_offset( dest_var.address.offset() ),
+                        operand: instructions::AddressingMode::stack_offset(
+                            dest_var.address.offset(),
+                        ),
                     });
                 }
-            },
+            }
             nodes::Ssa::Quadriplet(quad) => {
                 let width = quad.width;
                 let left_var = lookup.get(&quad.left).unwrap();
@@ -83,46 +108,103 @@ fn basic_block_to_asm(
                 let x0 = Register::x0(width);
                 let x1 = Register::x1(width);
 
-                result.push(Instruction::Load { width, dest: x0, operand: instructions::AddressingMode::stack_offset(left_var.address.offset()) });
-                result.push(Instruction::Load { width, dest: x1, operand: instructions::AddressingMode::stack_offset(right_var.address.offset()) });
+                result.push(Instruction::Load {
+                    width,
+                    dest: x0,
+                    operand: instructions::AddressingMode::stack_offset(left_var.address.offset()),
+                });
+                result.push(Instruction::Load {
+                    width,
+                    dest: x1,
+                    operand: instructions::AddressingMode::stack_offset(right_var.address.offset()),
+                });
 
                 if quad.op.is_cmp() {
                     let cond_op = instructions::ConditionalCode::try_from_nodes_op(quad.op);
-                    result.push(Instruction::Cmp { left: x0, right: x1.rvalue() });
-                    result.push(Instruction::CondSet { dest: x0, cond: cond_op});
+                    result.push(Instruction::Cmp {
+                        left: x0,
+                        right: x1.rvalue(),
+                    });
+                    result.push(Instruction::CondSet {
+                        dest: x0,
+                        cond: cond_op,
+                    });
                 } else {
                     let mod_op = instructions::ArithOp::try_from_nodes_op(quad.op);
-                    result.push(Instruction::Arith( instructions::Arith { op: mod_op, dest: x0, left: x0, right: x1.rvalue() } ));
+                    result.push(Instruction::Arith(instructions::Arith {
+                        op: mod_op,
+                        dest: x0,
+                        left: x0,
+                        right: x1.rvalue(),
+                    }));
                 }
 
-                result.push(Instruction::Store { width, source: x0, operand: instructions::AddressingMode::stack_offset(dest_var.address.offset()) });
-            },
+                result.push(Instruction::Store {
+                    width,
+                    source: x0,
+                    operand: instructions::AddressingMode::stack_offset(dest_var.address.offset()),
+                });
+            }
             nodes::Ssa::Label(lab) => {
                 result.push(Instruction::Label(lab.to_asm_label(func_name)));
-            },
-            nodes::Ssa::Branch { cond, true_target, false_target } => {
+            }
+            nodes::Ssa::Branch {
+                cond,
+                true_target,
+                false_target,
+            } => {
                 let cond_var = lookup.get(&cond).unwrap();
                 let width = cond_var.width;
                 let x0 = Register::x0(width);
-                result.push(Instruction::Load { width, dest: x0, operand: instructions::AddressingMode::stack_offset(cond_var.address.offset()) });
-                result.push(Instruction::Cmp { left: x0, right: instructions::RValue::Immediate(1) });
-                result.push(Instruction::Branch(instructions::Branch::cond_eq((true_target.clone(), func_name))));
-                result.push(Instruction::Branch(instructions::Branch::cond_not_eq((false_target.clone(), func_name))));
-            },
+                result.push(Instruction::Load {
+                    width,
+                    dest: x0,
+                    operand: instructions::AddressingMode::stack_offset(cond_var.address.offset()),
+                });
+                result.push(Instruction::Cmp {
+                    left: x0,
+                    right: instructions::RValue::Immediate(1),
+                });
+                result.push(Instruction::Branch(instructions::Branch::cond_eq((
+                    true_target.clone(),
+                    func_name,
+                ))));
+                result.push(Instruction::Branch(instructions::Branch::cond_not_eq((
+                    false_target.clone(),
+                    func_name,
+                ))));
+            }
             nodes::Ssa::Return { value } => {
                 if let Some((val, width)) = value {
                     let x0 = Register::x0(*width);
                     let val_info = lookup.get(&val).unwrap();
-                    result.push(Instruction::Load { width: *width, dest: x0, operand: instructions::AddressingMode::stack_offset(val_info.address.offset()) });
-                    result.push(Instruction::Branch(instructions::Branch::uncond(instructions::Label(format!("return_{}", func_name)))))
-                } 
+                    result.push(Instruction::Load {
+                        width: *width,
+                        dest: x0,
+                        operand: instructions::AddressingMode::stack_offset(
+                            val_info.address.offset(),
+                        ),
+                    });
+                    result.push(Instruction::Branch(instructions::Branch::uncond(
+                        instructions::Label(format!("return_{}", func_name)),
+                    )))
+                }
 
-                result.push(Instruction::Branch(instructions::Branch::uncond(instructions::Label(format!("return_{}", func_name)))))
-            },
+                result.push(Instruction::Branch(instructions::Branch::uncond(
+                    instructions::Label(format!("return_{}", func_name)),
+                )))
+            }
             nodes::Ssa::Jump(target) => {
-                result.push(Instruction::Branch(instructions::Branch::uncond((target.clone(), func_name))));
-            },
-            nodes::Ssa::Param { number, value, width } => {
+                result.push(Instruction::Branch(instructions::Branch::uncond((
+                    target.clone(),
+                    func_name,
+                ))));
+            }
+            nodes::Ssa::Param {
+                number,
+                value,
+                width,
+            } => {
                 let reg = match *number {
                     0 => Register::x0(*width),
                     1 => Register::x1(*width),
@@ -130,30 +212,54 @@ fn basic_block_to_asm(
                     _ => todo!(),
                 };
                 let var = lookup.get(value).unwrap();
-                result.push(Instruction::Load { width: *width, dest: reg, operand: instructions::AddressingMode::stack_offset(var.address.offset()) });
-            },
-            nodes::Ssa::Call { dest, func, num_params: _ } => {
+                result.push(Instruction::Load {
+                    width: *width,
+                    dest: reg,
+                    operand: instructions::AddressingMode::stack_offset(var.address.offset()),
+                });
+            }
+            nodes::Ssa::Call {
+                dest,
+                func,
+                num_params: _,
+            } => {
                 match func {
                     nodes::Address::CompilerTemp(_) => {
                         let x0 = Register::x0(Width::Long);
                         let symb = lookup.get(func).unwrap();
-                        result.push(Instruction::Load { width: Width::Long, dest: x0, operand: instructions::AddressingMode::stack_offset(symb.address.offset()) });
-                        result.push(Instruction::Branch(instructions::Branch::branch_link_register(x0)));
-                    }, 
+                        result.push(Instruction::Load {
+                            width: Width::Long,
+                            dest: x0,
+                            operand: instructions::AddressingMode::stack_offset(
+                                symb.address.offset(),
+                            ),
+                        });
+                        result.push(Instruction::Branch(
+                            instructions::Branch::branch_link_register(x0),
+                        ));
+                    }
                     nodes::Address::Source(source) => {
-                        result.push(Instruction::Branch(instructions::Branch::branch_link(instructions::Label(format!("_{}", source.0)))));
-                    },
-                    nodes::Address::Constant(_)  => {
+                        result.push(Instruction::Branch(instructions::Branch::branch_link(
+                            instructions::Label(format!("_{}", source.0)),
+                        )));
+                    }
+                    nodes::Address::Constant(_) => {
                         panic!("Cannot call a constant! Unless maybe blr?");
                     }
                 }
                 if let Some((val, width)) = dest {
                     let x0 = Register::x0(*width);
                     let val_info = lookup.get(&val).unwrap();
-                    result.push(Instruction::Store { width: *width, source: x0, operand: instructions::AddressingMode::stack_offset(val_info.address.offset()) });
+                    result.push(Instruction::Store {
+                        width: *width,
+                        source: x0,
+                        operand: instructions::AddressingMode::stack_offset(
+                            val_info.address.offset(),
+                        ),
+                    });
                 }
-            },
-            
+            }
+
             nodes::Ssa::Phi(_) => panic!("Phi functions should be eliminated at this stage!"),
             _ => todo!(),
         }
@@ -161,7 +267,11 @@ fn basic_block_to_asm(
     result
 }
 
-pub fn convert_function_body_ir_to_asm(ir: &[nodes::Ssa], func_name: &str, global_lookup: &SymbolLookup) -> Vec<instructions::Instruction> {
+pub fn convert_function_body_ir_to_asm(
+    ir: &[nodes::Ssa],
+    func_name: &str,
+    global_lookup: &SymbolLookup,
+) -> Vec<instructions::Instruction> {
     let lookup = SymbolLookup::from_fn_body(ir);
 
     let stack_size = lookup.stack_size();
@@ -171,39 +281,79 @@ pub fn convert_function_body_ir_to_asm(ir: &[nodes::Ssa], func_name: &str, globa
     let blocks = ir_to_basic_blocks(ir);
     let mut instructions = vec![];
 
-    instructions.push(instructions::Instruction::StorePair { r1: Register::frame_pointer(), r2: Register::link_register(), addressing: instructions::AddressingMode::pre_indexed(-16) });
-    instructions.push(instructions::Instruction::Mov { dest: Register::frame_pointer(), operand: instructions::RValue::Register(Register::stack_pointer()) });
+    instructions.push(instructions::Instruction::StorePair {
+        r1: Register::frame_pointer(),
+        r2: Register::link_register(),
+        addressing: instructions::AddressingMode::pre_indexed(-16),
+    });
+    instructions.push(instructions::Instruction::Mov {
+        dest: Register::frame_pointer(),
+        operand: instructions::RValue::Register(Register::stack_pointer()),
+    });
 
-    instructions.push(instructions::Instruction::Arith( instructions::Arith { op: instructions::ArithOp::Sub, dest: Register::stack_pointer(), left: Register::stack_pointer(), right: instructions::RValue::Immediate(stack_size as i64) } ));
+    instructions.push(instructions::Instruction::Arith(instructions::Arith {
+        op: instructions::ArithOp::Sub,
+        dest: Register::stack_pointer(),
+        left: Register::stack_pointer(),
+        right: instructions::RValue::Immediate(stack_size as i64),
+    }));
 
     for block in blocks.iter() {
         let asm = basic_block_to_asm(block, func_name, &lookup);
         instructions.extend(asm);
     }
 
-    instructions.push(instructions::Instruction::Label( format!("return_{}", func_name)));
-    instructions.push(instructions::Instruction::Arith( instructions::Arith { op: instructions::ArithOp::Add, dest: Register::stack_pointer(), left: Register::stack_pointer(), right: instructions::RValue::Immediate(stack_size as i64) } ));
-    instructions.push(instructions::Instruction::LoadPair { r1: Register::frame_pointer(), r2: Register::link_register(), addressing: instructions::AddressingMode::post_indexed(16) });
-    instructions.push(instructions::Instruction::Branch(instructions::Branch::Return));
+    instructions.push(instructions::Instruction::Label(format!(
+        "return_{}",
+        func_name
+    )));
+    instructions.push(instructions::Instruction::Arith(instructions::Arith {
+        op: instructions::ArithOp::Add,
+        dest: Register::stack_pointer(),
+        left: Register::stack_pointer(),
+        right: instructions::RValue::Immediate(stack_size as i64),
+    }));
+    instructions.push(instructions::Instruction::LoadPair {
+        r1: Register::frame_pointer(),
+        r2: Register::link_register(),
+        addressing: instructions::AddressingMode::post_indexed(16),
+    });
+    instructions.push(instructions::Instruction::Branch(
+        instructions::Branch::Return,
+    ));
     instructions
 }
 
-pub fn convert_function_to_asm(fd: &nodes::FunctionDef,  lookup: &SymbolLookup) -> Vec<instructions::Instruction> {
+pub fn convert_function_to_asm(
+    fd: &nodes::FunctionDef,
+    lookup: &SymbolLookup,
+) -> Vec<instructions::Instruction> {
     let mut instructions = vec![];
-    instructions.push(instructions::Instruction::Label( "_".to_owned() + fd.name.as_str() ));
+    instructions.push(instructions::Instruction::Label(
+        "_".to_owned() + fd.name.as_str(),
+    ));
     instructions.extend(convert_function_body_ir_to_asm(&fd.body, &fd.name, lookup));
 
     instructions
 }
 
-pub fn convert_declaration_to_asm(dec: &nodes::ToplevelDeclaration) -> Vec<instructions::Instruction> {
+pub fn convert_declaration_to_asm(
+    dec: &nodes::ToplevelDeclaration,
+) -> Vec<instructions::Instruction> {
     let mut instructions = vec![];
     match dec {
-        nodes::ToplevelDeclaration::Function { storage_class, name, return_width: _, parameters: _ } => {
+        nodes::ToplevelDeclaration::Function {
+            storage_class,
+            name,
+            return_width: _,
+            parameters: _,
+        } => {
             if matches!(storage_class, StorageClass::Extern) {
-                instructions.push(instructions::Instruction::Directive( instructions::Directive::Extern( name.clone() ) ));
+                instructions.push(instructions::Instruction::Directive(
+                    instructions::Directive::Extern(name.clone()),
+                ));
             }
-        },
+        }
     }
     instructions
 }
@@ -212,18 +362,22 @@ pub fn convert_unit_to_asm(unit: &[nodes::ToplevelItem]) -> Vec<instructions::In
     let lookup = SymbolLookup::global_from_unit(unit);
     let mut instructions = vec![];
 
-    instructions.push(Instruction::Directive(instructions::Directive::Section(instructions::Section::Text)));
+    instructions.push(Instruction::Directive(instructions::Directive::Section(
+        instructions::Section::Text,
+    )));
 
     for tl in unit {
         match tl {
             nodes::ToplevelItem::Declaration(dec) => {
                 instructions.extend(convert_declaration_to_asm(dec))
-            },
+            }
             nodes::ToplevelItem::Function(f) => {
                 // Todo: Static functions should not be exported
-                instructions.push(Instruction::Directive(instructions::Directive::Global(f.name.clone())));
+                instructions.push(Instruction::Directive(instructions::Directive::Global(
+                    f.name.clone(),
+                )));
             }
-        } 
+        }
     }
 
     for tl in unit {
@@ -232,12 +386,14 @@ pub fn convert_unit_to_asm(unit: &[nodes::ToplevelItem]) -> Vec<instructions::In
         }
     }
 
-    instructions.push(Instruction::Directive(instructions::Directive::Section(instructions::Section::TextCstring)));
+    instructions.push(Instruction::Directive(instructions::Directive::Section(
+        instructions::Section::TextCstring,
+    )));
 
     for (counter, strlit) in lookup.string_literals_iter() {
         instructions.push(instructions::Instruction::Label(format!("sl{}", counter)));
         instructions.push(instructions::Instruction::Directive(
-            instructions::Directive::AsciiCString(strlit.to_owned())
+            instructions::Directive::AsciiCString(strlit.to_owned()),
         ));
     }
 

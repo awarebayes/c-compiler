@@ -14,7 +14,7 @@ struct State {
     return_width: Option<Width>,
     expression_width: Option<Width>,
     parent_phi_label: Label,
-    source_counts: Rc<RefCell<HashMap<String, usize>>>
+    source_counts: Rc<RefCell<HashMap<String, usize>>>,
 }
 
 impl State {
@@ -77,7 +77,7 @@ impl State {
     }
 
     fn inc_source_address_count(&self, source_address: &str) -> usize {
-        let mut counts=  self.source_counts.borrow_mut();
+        let mut counts = self.source_counts.borrow_mut();
         if !counts.contains_key(source_address) {
             counts.insert(source_address.to_owned(), 0);
             0
@@ -88,19 +88,14 @@ impl State {
         }
     }
 
-
     fn get_last_address_count(&self, address: &str) -> usize {
-        let counts=  self.source_counts.borrow();
+        let counts = self.source_counts.borrow();
         counts.get(address).cloned().unwrap_or_default()
     }
 }
 
 trait SsaBuilder {
-    fn visit(
-        &self,
-        symbol_table: SymbolTableRef,
-        state: &State,
-    ) -> Vec<nodes::Ssa>;
+    fn visit(&self, symbol_table: SymbolTableRef, state: &State) -> Vec<nodes::Ssa>;
 }
 
 fn apply_assignment_to_exp(
@@ -118,7 +113,10 @@ fn apply_assignment_to_exp(
             new_ssas.push(nodes::Ssa::Quadriplet(nodes::Quadriplet {
                 dest: nodes::Address::compiler_temp(state.var_count()),
                 op: op,
-                left: nodes::Address::source_count(lvalue.0.clone(), state.get_last_address_count(&lvalue.0)),
+                left: nodes::Address::source_count(
+                    lvalue.0.clone(),
+                    state.get_last_address_count(&lvalue.0),
+                ),
                 right: Some(nodes::Address::compiler_temp(state.last_var())),
                 width: state.expression_width.unwrap(),
             }));
@@ -192,32 +190,39 @@ struct ChangedPhiVar {
 fn changed_phi_vars(ir: &[nodes::Ssa]) -> Vec<ChangedPhiVar> {
     ir.iter()
         .filter_map(|instruction| match instruction {
-            nodes::Ssa::Assignment { dest, source, width } 
-                if matches!(dest, nodes::Address::Source(_)) 
-                => Some(ChangedPhiVar { source_var: dest.clone(), compiler_temp: source.clone(), width: *width }),
+            nodes::Ssa::Assignment {
+                dest,
+                source,
+                width,
+            } if matches!(dest, nodes::Address::Source(_)) => Some(ChangedPhiVar {
+                source_var: dest.clone(),
+                compiler_temp: source.clone(),
+                width: *width,
+            }),
             _ => None,
         })
         .collect()
 }
 
-
 fn expression_vars(ir: &[nodes::Ssa]) -> Vec<ChangedPhiVar> {
     ir.iter()
         .filter_map(|instruction| match instruction {
-            nodes::Ssa::Assignment { dest, source, width } 
-                if matches!(source, nodes::Address::Source(_)) 
-                => Some(ChangedPhiVar { source_var: source.clone(), compiler_temp: dest.clone(), width: *width }),
+            nodes::Ssa::Assignment {
+                dest,
+                source,
+                width,
+            } if matches!(source, nodes::Address::Source(_)) => Some(ChangedPhiVar {
+                source_var: source.clone(),
+                compiler_temp: dest.clone(),
+                width: *width,
+            }),
             _ => None,
         })
         .collect()
 }
 
 impl SsaBuilder for &ast::Expression {
-    fn visit(
-        &self,
-        symbol_table: SymbolTableRef,
-        state: &State,
-    ) -> Vec<nodes::Ssa> {
+    fn visit(&self, symbol_table: SymbolTableRef, state: &State) -> Vec<nodes::Ssa> {
         let mut nodes = vec![];
         match self {
             ast::Expression::Identifier(id) => {
@@ -228,7 +233,10 @@ impl SsaBuilder for &ast::Expression {
                 }
                 nodes.push(nodes::Ssa::Assignment {
                     dest: nodes::Address::compiler_temp(state.var_count()),
-                    source: nodes::Address::source_count( id.0.clone(), state.get_last_address_count(&id.0) ),
+                    source: nodes::Address::source_count(
+                        id.0.clone(),
+                        state.get_last_address_count(&id.0),
+                    ),
                     width,
                 });
                 state.inc_var_cnt();
@@ -248,12 +256,10 @@ impl SsaBuilder for &ast::Expression {
                     }
                 }
 
-                let left_expression =
-                    bin.left.as_ref().visit(symbol_table.clone(), &new_state);
+                let left_expression = bin.left.as_ref().visit(symbol_table.clone(), &new_state);
 
                 let left_temp_id = new_state.last_var();
-                let right_expression =
-                    bin.right.as_ref().visit(symbol_table.clone(), &new_state);
+                let right_expression = bin.right.as_ref().visit(symbol_table.clone(), &new_state);
 
                 let right_temp_id = new_state.last_var();
                 nodes.extend(left_expression);
@@ -285,59 +291,76 @@ impl SsaBuilder for &ast::Expression {
                     .query(&ce.get_identifier().as_ref().unwrap().0)
                     .unwrap();
 
-                let parameters = match &symbol.kind {
+                let (parameters, is_variadic) = match &symbol.kind {
                     SymbolKind::Variable { is_mutable: _ } => panic!("Cannot call a variable"),
-                    SymbolKind::Function { parameters } => parameters,
+                    SymbolKind::Function {
+                        parameters,
+                        is_variadic,
+                    } => (parameters, *is_variadic),
                 };
-
-                if ce.arguments.len() != parameters.len() {
+                if !is_variadic && ce.arguments.len() != parameters.len() {
                     panic!(
                         "Wrong number of arguments, expected {} got {}",
                         parameters.len(),
                         ce.arguments.len()
                     )
+                } else if is_variadic && ce.arguments.len() < parameters.len() {
+                    panic!(
+                        "Wrong number of arguments to variadic function, expected at least {} got {}",
+                        parameters.len(),
+                        ce.arguments.len()
+                    )
                 }
 
-                for (arg, param) in ce.arguments.iter().zip(parameters.iter()) {
+                for (arg_idx, arg) in ce.arguments.iter().enumerate() {
                     let estimated_width = expression_width(symbol_table.clone(), arg);
-                    let width = Width::from_type(param);
-                    if let ExpressionWidth::Some(est) = estimated_width {
-                        assert_eq!(width, est);
+                    let mut end_width = None;
+
+                    if let Some(param) = parameters.get(arg_idx) {
+                        let width = Width::from_type(param);
+                        end_width = Some(width);
                     }
-                    let arg_ssa = arg.visit(
-                        symbol_table.clone(),
-                        state,
-                    );
+
+                    if let ExpressionWidth::Some(est) = estimated_width {
+                        if let Some(prev_width) = end_width {
+                            assert_eq!(est, prev_width);
+                        } else {
+                            end_width = Some(est);
+                        }
+                    }
+                    let arg_ssa = arg.visit(symbol_table.clone(), state);
                     let arg_temp = state.last_var();
                     nodes.extend(arg_ssa);
-                    args_temps.push((arg_temp, width))
+                    args_temps.push((arg_temp, end_width.expect("Unable to determine var width")))
                 }
 
                 let function_adress = match ce.function.as_ref() {
-                    ast::Expression::Identifier(id) => nodes::Address::source_count(id.0.clone(), 0),
+                    ast::Expression::Identifier(id) => {
+                        nodes::Address::source_count(id.0.clone(), 0)
+                    }
                     _ => {
-                        let function_ssa =
-                            ce.function.as_ref().visit(symbol_table, state);
+                        let function_ssa = ce.function.as_ref().visit(symbol_table, state);
                         let function_temp = state.last_var();
                         nodes.extend(function_ssa);
                         nodes::Address::CompilerTemp(function_temp)
                     }
                 };
 
-
                 for (counter, &(index, width)) in args_temps.iter().enumerate() {
                     nodes.push(nodes::Ssa::Param {
                         value: nodes::Address::CompilerTemp(index),
                         width: width,
                         number: counter,
-
                     });
                 }
 
                 let return_width = Width::from_type(&symbol.type_info);
 
                 nodes.push(nodes::Ssa::Call {
-                    dest: Some((nodes::Address::CompilerTemp(state.var_count()), return_width)),
+                    dest: Some((
+                        nodes::Address::CompilerTemp(state.var_count()),
+                        return_width,
+                    )),
                     func: function_adress,
                     num_params: ce.arguments.len(),
                 });
@@ -383,7 +406,7 @@ impl SsaBuilder for &ast::Expression {
 }
 
 fn generate_phi_if_else(
-    changed_if: &[ChangedPhiVar], 
+    changed_if: &[ChangedPhiVar],
     changed_else: &[ChangedPhiVar],
     counts_before: &HashMap<String, usize>,
     state: &State,
@@ -391,17 +414,24 @@ fn generate_phi_if_else(
     false_label: Label,
 ) -> Vec<nodes::Ssa> {
     let mut res_ssa = vec![];
-    let mut groupby_source_var: HashMap<String, (Option<ChangedPhiVar>, Option<ChangedPhiVar>)> = HashMap::new();
+    let mut groupby_source_var: HashMap<String, (Option<ChangedPhiVar>, Option<ChangedPhiVar>)> =
+        HashMap::new();
     for i in changed_if.iter().chain(changed_else.iter()) {
         groupby_source_var.insert(i.source_var.get_source().to_owned(), (None, None));
     }
 
     for i in changed_if.iter() {
-        groupby_source_var.get_mut(i.source_var.get_source()).unwrap().0 = Some(i.clone());
+        groupby_source_var
+            .get_mut(i.source_var.get_source())
+            .unwrap()
+            .0 = Some(i.clone());
     }
 
     for i in changed_else.iter() {
-        groupby_source_var.get_mut(i.source_var.get_source()).unwrap().1 = Some(i.clone());
+        groupby_source_var
+            .get_mut(i.source_var.get_source())
+            .unwrap()
+            .1 = Some(i.clone());
     }
 
     for (var_if, var_else) in groupby_source_var.values() {
@@ -409,27 +439,51 @@ fn generate_phi_if_else(
             (Some(var_if), Some(var_else)) => {
                 let var_name = var_if.source_var.get_source();
                 let count = state.inc_source_address_count(var_name);
-                res_ssa.push(nodes::Ssa::Phi (PhiFunction { dest: Address::source_count(var_name.to_owned(), count) , width: var_if.width, merging: vec![
-                    (var_if.source_var.clone(), true_label.clone()),
-                    (var_else.source_var.clone(), false_label.clone()),
-                ]}));
-            },
+                res_ssa.push(nodes::Ssa::Phi(PhiFunction {
+                    dest: Address::source_count(var_name.to_owned(), count),
+                    width: var_if.width,
+                    merging: vec![
+                        (var_if.source_var.clone(), true_label.clone()),
+                        (var_else.source_var.clone(), false_label.clone()),
+                    ],
+                }));
+            }
             (Some(var_if), None) => {
                 let var_name = var_if.source_var.get_source();
                 let count = state.inc_source_address_count(var_name);
-                res_ssa.push(nodes::Ssa::Phi (PhiFunction { dest: Address::source_count(var_name.to_owned(), count) , width: var_if.width, merging: vec![
-                    (var_if.source_var.clone(), true_label.clone()),
-                    (Address::source_count(var_name.to_owned(), counts_before.get(var_name).cloned().unwrap_or_default() ), state.parent_phi_label.clone())
-                ]}));
-            },
+                res_ssa.push(nodes::Ssa::Phi(PhiFunction {
+                    dest: Address::source_count(var_name.to_owned(), count),
+                    width: var_if.width,
+                    merging: vec![
+                        (var_if.source_var.clone(), true_label.clone()),
+                        (
+                            Address::source_count(
+                                var_name.to_owned(),
+                                counts_before.get(var_name).cloned().unwrap_or_default(),
+                            ),
+                            state.parent_phi_label.clone(),
+                        ),
+                    ],
+                }));
+            }
             (None, Some(var_else)) => {
                 let var_name = var_else.source_var.get_source();
                 let count = state.inc_source_address_count(var_name);
-                res_ssa.push(nodes::Ssa::Phi( PhiFunction { dest: Address::source_count(var_name.to_owned(), count) , width: var_else.width, merging: vec![
-                    (Address::source_count(var_name.to_owned(), counts_before.get(var_name).cloned().unwrap_or_default() ), state.parent_phi_label.clone()),
-                    (var_else.source_var.clone(), false_label.clone()),
-                ]}));
-            },
+                res_ssa.push(nodes::Ssa::Phi(PhiFunction {
+                    dest: Address::source_count(var_name.to_owned(), count),
+                    width: var_else.width,
+                    merging: vec![
+                        (
+                            Address::source_count(
+                                var_name.to_owned(),
+                                counts_before.get(var_name).cloned().unwrap_or_default(),
+                            ),
+                            state.parent_phi_label.clone(),
+                        ),
+                        (var_else.source_var.clone(), false_label.clone()),
+                    ],
+                }));
+            }
             (None, None) => {}
         }
     }
@@ -438,20 +492,15 @@ fn generate_phi_if_else(
 }
 
 impl SsaBuilder for &ast::IfStatement {
-    fn visit(
-        &self,
-        symbol_table: SymbolTableRef,
-        state: &State,
-    ) -> Vec<nodes::Ssa> {
+    fn visit(&self, symbol_table: SymbolTableRef, state: &State) -> Vec<nodes::Ssa> {
         let mut out = vec![];
         match self.else_body.as_ref() {
             None => {
-                let expr_ssas =
-                    self.condition
-                        .expression
-                        .as_ref()
-                        .visit(symbol_table.clone(), state);
-
+                let expr_ssas = self
+                    .condition
+                    .expression
+                    .as_ref()
+                    .visit(symbol_table.clone(), state);
 
                 let true_label = nodes::Label::compiler_temp(state.label_count());
                 let false_label = nodes::Label::compiler_temp(state.label_count() + 1);
@@ -469,8 +518,7 @@ impl SsaBuilder for &ast::IfStatement {
 
                 out.push(nodes::Ssa::Label(true_label.clone()));
 
-                let true_ssas =
-                    self.body.as_ref().visit(symbol_table.clone(), state);
+                let true_ssas = self.body.as_ref().visit(symbol_table.clone(), state);
 
                 let changed_phi_vars = changed_phi_vars(&true_ssas);
                 out.extend(true_ssas);
@@ -478,18 +526,31 @@ impl SsaBuilder for &ast::IfStatement {
 
                 out.extend(changed_phi_vars.iter().map(|var| {
                     let count = state.inc_source_address_count(&var.source_var.get_source());
-                    nodes::Ssa::Phi( PhiFunction { dest: Address::source_count(var.source_var.get_source().to_owned(), count) , width: var.width, merging: vec![
-                        (var.source_var.clone(), true_label.clone()),
-                        (Address::source_count(var.source_var.get_source().to_owned(), counts_before.get(var.source_var.get_source()).cloned().unwrap_or_default() ), state.parent_phi_label.clone())
-                    ]})
+                    nodes::Ssa::Phi(PhiFunction {
+                        dest: Address::source_count(var.source_var.get_source().to_owned(), count),
+                        width: var.width,
+                        merging: vec![
+                            (var.source_var.clone(), true_label.clone()),
+                            (
+                                Address::source_count(
+                                    var.source_var.get_source().to_owned(),
+                                    counts_before
+                                        .get(var.source_var.get_source())
+                                        .cloned()
+                                        .unwrap_or_default(),
+                                ),
+                                state.parent_phi_label.clone(),
+                            ),
+                        ],
+                    })
                 }));
             }
             Some(body) => {
-                let expr_ssas =
-                    self.condition
-                        .expression
-                        .as_ref()
-                        .visit(symbol_table.clone(), &state.clone());
+                let expr_ssas = self
+                    .condition
+                    .expression
+                    .as_ref()
+                    .visit(symbol_table.clone(), &state.clone());
 
                 let counts_before = state.clone_counts();
 
@@ -508,8 +569,7 @@ impl SsaBuilder for &ast::IfStatement {
                 });
                 out.push(nodes::Ssa::Label(true_label.clone()));
 
-                let true_ssas =
-                    self.body.as_ref().visit(symbol_table.clone(), state);
+                let true_ssas = self.body.as_ref().visit(symbol_table.clone(), state);
 
                 let changed_true = changed_phi_vars(&true_ssas);
 
@@ -517,16 +577,21 @@ impl SsaBuilder for &ast::IfStatement {
                 out.push(nodes::Ssa::Jump(end_label.clone()));
                 out.push(nodes::Ssa::Label(false_label.clone()));
 
-                let false_ssas =
-                    body.as_ref().visit(symbol_table.clone(), state);
+                let false_ssas = body.as_ref().visit(symbol_table.clone(), state);
 
                 let changed_false = changed_phi_vars(&false_ssas);
 
                 out.extend(false_ssas);
                 out.push(nodes::Ssa::Label(end_label.clone()));
 
-                out.extend(generate_phi_if_else(&changed_true, &changed_false, &counts_before, state, true_label, false_label))
-
+                out.extend(generate_phi_if_else(
+                    &changed_true,
+                    &changed_false,
+                    &counts_before,
+                    state,
+                    true_label,
+                    false_label,
+                ))
             }
         }
 
@@ -542,30 +607,23 @@ fn apply_changes_to_ssa(changed_vars: &[ChangedPhiVar], ir: &mut [nodes::Ssa], l
                     continue;
                 }
 
-                phi.merging.push((
-                    cw.source_var.clone(),
-                    label.clone()
-                ));
+                phi.merging.push((cw.source_var.clone(), label.clone()));
             }
         }
     }
 }
 
 impl SsaBuilder for &ast::WhileStatement {
-    fn visit(
-        &self,
-        symbol_table: SymbolTableRef,
-        state: &State,
-    ) -> Vec<nodes::Ssa> {
+    fn visit(&self, symbol_table: SymbolTableRef, state: &State) -> Vec<nodes::Ssa> {
         let mut out = vec![];
 
         let before_cond_count = state.clone_counts();
 
-        let expr_ssas_temp =
-            self.condition
-                .expression
-                .as_ref()
-                .visit(symbol_table.clone(), &state.dummy());
+        let expr_ssas_temp = self
+            .condition
+            .expression
+            .as_ref()
+            .visit(symbol_table.clone(), &state.dummy());
 
         let cond_label = nodes::Label::compiler_temp(state.label_count());
         let start_label = nodes::Label::compiler_temp(state.label_count() + 1);
@@ -583,31 +641,30 @@ impl SsaBuilder for &ast::WhileStatement {
 
         out.extend(expr_vars.iter().map(|var| {
             let count = state.inc_source_address_count(&var.source_var.get_source());
-            nodes::Ssa::Phi(PhiFunction { dest: Address::source_count(var.source_var.get_source().to_owned(), count),
-                width: var.width, merging: vec![
-                (var.source_var.clone(), state.parent_phi_label.clone()),
-            ] })
+            nodes::Ssa::Phi(PhiFunction {
+                dest: Address::source_count(var.source_var.get_source().to_owned(), count),
+                width: var.width,
+                merging: vec![(var.source_var.clone(), state.parent_phi_label.clone())],
+            })
         }));
 
-        let expr_ssas=
-            self.condition
-                .expression
-                .as_ref()
-                .visit(symbol_table.clone(), state);
-
+        let expr_ssas = self
+            .condition
+            .expression
+            .as_ref()
+            .visit(symbol_table.clone(), state);
 
         let loop_branch = nodes::Ssa::Branch {
             cond: nodes::Address::compiler_temp(state.last_var()),
             true_target: start_label.clone(),
             false_target: end_label.clone(),
         };
-        
+
         let phi_cond_end = out.len();
 
         out.extend(expr_ssas);
         out.push(loop_branch);
         out.push(nodes::Ssa::Label(start_label.clone()));
-
 
         let body_ssas = self.body.as_ref().visit(symbol_table.clone(), state);
         let changed_vars = changed_phi_vars(&body_ssas);
@@ -616,15 +673,31 @@ impl SsaBuilder for &ast::WhileStatement {
         out.push(nodes::Ssa::Jump(cond_label.clone()));
         out.push(nodes::Ssa::Label(end_label.clone()));
 
-        apply_changes_to_ssa(&changed_vars, &mut out[phi_cond_start..phi_cond_end], start_label.clone());
-        
+        apply_changes_to_ssa(
+            &changed_vars,
+            &mut out[phi_cond_start..phi_cond_end],
+            start_label.clone(),
+        );
+
         out.extend(changed_vars.iter().map(|var| {
             let count = state.inc_source_address_count(&var.source_var.get_source());
-            nodes::Ssa::Phi(PhiFunction { dest: Address::source_count(var.source_var.get_source().to_owned(), count),
-                width: var.width, merging: vec![
-                (Address::source_count(var.source_var.get_source().to_owned(), before_cond_count.get(var.source_var.get_source()).cloned().unwrap_or_default() ), state.parent_phi_label.clone()),
-                (var.source_var.clone(), start_label.clone()),
-            ] })
+            nodes::Ssa::Phi(PhiFunction {
+                dest: Address::source_count(var.source_var.get_source().to_owned(), count),
+                width: var.width,
+                merging: vec![
+                    (
+                        Address::source_count(
+                            var.source_var.get_source().to_owned(),
+                            before_cond_count
+                                .get(var.source_var.get_source())
+                                .cloned()
+                                .unwrap_or_default(),
+                        ),
+                        state.parent_phi_label.clone(),
+                    ),
+                    (var.source_var.clone(), start_label.clone()),
+                ],
+            })
         }));
 
         out
@@ -632,11 +705,7 @@ impl SsaBuilder for &ast::WhileStatement {
 }
 
 impl SsaBuilder for &ast::Statement {
-    fn visit(
-        &self,
-        symbol_table: SymbolTableRef,
-        state: &State,
-    ) -> Vec<nodes::Ssa> {
+    fn visit(&self, symbol_table: SymbolTableRef, state: &State) -> Vec<nodes::Ssa> {
         match self {
             ast::Statement::Declaration(decl) => match decl.declarator.as_ref() {
                 ast::Declarator::FunctionDeclarator(_)
@@ -652,16 +721,13 @@ impl SsaBuilder for &ast::Statement {
                         &symbol_table.borrow().query(&var_name).unwrap().type_info,
                     );
 
-                    let mut expr_ssas = expr.visit(
-                        symbol_table,
-                        &state.with_expr_width(width),
-                    );
+                    let mut expr_ssas = expr.visit(symbol_table, &state.with_expr_width(width));
                     let last_id = state.last_var();
 
                     let count = state.inc_source_address_count(&var_name);
 
                     expr_ssas.push(nodes::Ssa::Assignment {
-                        dest: nodes::Address::source_count(var_name.clone(), count) ,
+                        dest: nodes::Address::source_count(var_name.clone(), count),
                         source: nodes::Address::compiler_temp(last_id),
                         width: width,
                     });
@@ -677,8 +743,10 @@ impl SsaBuilder for &ast::Statement {
                     if let ExpressionWidth::Some(est) = expr_width {
                         assert_eq!(est, state.return_width.unwrap());
                     }
-                    let mut expr_ssas =
-                        (&rs.expression).visit(symbol_table, &state.with_expr_width(state.return_width.unwrap()));
+                    let mut expr_ssas = (&rs.expression).visit(
+                        symbol_table,
+                        &state.with_expr_width(state.return_width.unwrap()),
+                    );
                     let expression_res_var = state.last_var();
                     expr_ssas.push(nodes::Ssa::Return {
                         value: Some((
@@ -702,11 +770,7 @@ impl SsaBuilder for &ast::Statement {
 }
 
 impl SsaBuilder for &ast::CompoundStatement {
-    fn visit(
-        &self,
-        symbol_table: SymbolTableRef,
-        state: &State,
-    ) -> Vec<nodes::Ssa> {
+    fn visit(&self, symbol_table: SymbolTableRef, state: &State) -> Vec<nodes::Ssa> {
         let mut ssas = vec![];
 
         // TODO: ADJUST SYMBOL TABLE HERE!!!!!!!!!!!!!
@@ -758,12 +822,9 @@ fn function_ssa(fd: &ast::FunctionDefinition, symbol_table: SymbolTableRef) -> T
         parameters,
         body: ([
             vec![nodes::Ssa::Label(begin_label.clone())],
-            (&fd.body)
-            .visit(
-                symbol_table,
-                &State::new(return_width, begin_label)
-            ),
-            ]).concat(),
+            (&fd.body).visit(symbol_table, &State::new(return_width, begin_label)),
+        ])
+        .concat(),
         return_width: return_width,
     })
 }

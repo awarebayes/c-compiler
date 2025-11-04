@@ -61,13 +61,19 @@ impl Visitable for &ast::Declaration {
                 let parameter_types: Vec<table::SymbolType> = func_dec
                     .parameters
                     .iter()
-                    .map(|fp| table::SymbolType::try_from(fp).unwrap())
+                    .filter_map(|fp| match fp {
+                        ast::FunctionParameter::ParameterDeclaration(_) => {
+                            Some(table::SymbolType::try_from(fp).unwrap())
+                        }
+                        ast::FunctionParameter::VariadicParameter => None,
+                    })
                     .collect();
 
                 let symbol = Symbol {
                     name: identifier.0.clone(),
                     kind: table::SymbolKind::Function {
                         parameters: parameter_types,
+                        is_variadic: func_dec.is_variadic,
                     },
                     type_info: table::SymbolType::try_from((
                         func_dec.declarator.as_ref(),
@@ -132,13 +138,24 @@ impl Visitable for &ast::FunctionDefinition {
             .declarator
             .parameters()
             .into_iter()
-            .map(|fp| table::SymbolType::try_from(fp).unwrap())
+            .filter_map(|fp| match fp {
+                ast::FunctionParameter::ParameterDeclaration(_) => {
+                    Some(table::SymbolType::try_from(fp).unwrap())
+                }
+                ast::FunctionParameter::VariadicParameter => None,
+            })
             .collect();
+
+        let is_variadic = match &self.declarator {
+            ast::FunctionDeclaratorField::FunctionDeclarator(fd) => fd.is_variadic,
+            _ => panic!(),
+        };
 
         table.borrow_mut().add_symbol(Symbol {
             name: func_name.0,
             kind: table::SymbolKind::Function {
                 parameters: parameter_symbols.clone(),
+                is_variadic: is_variadic,
             },
             type_info: return_type,
             storage_class: StorageClass::Auto,

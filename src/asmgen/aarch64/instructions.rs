@@ -91,29 +91,46 @@ pub struct Register {
 }
 
 impl Register {
-    pub fn x0( width: Width ) -> Self {
-        Register { kind: RegisterKind::FunctionArgument(FunctionArgumentRegister::X0), width }
+    pub fn x0(width: Width) -> Self {
+        Register {
+            kind: RegisterKind::FunctionArgument(FunctionArgumentRegister::X0),
+            width,
+        }
     }
 
-    pub fn x1( width: Width ) -> Self {
-        Register { kind: RegisterKind::FunctionArgument(FunctionArgumentRegister::X1), width }
+    pub fn x1(width: Width) -> Self {
+        Register {
+            kind: RegisterKind::FunctionArgument(FunctionArgumentRegister::X1),
+            width,
+        }
     }
 
-    pub fn x2( width: Width ) -> Self {
-        Register { kind: RegisterKind::FunctionArgument(FunctionArgumentRegister::X2), width }
+    pub fn x2(width: Width) -> Self {
+        Register {
+            kind: RegisterKind::FunctionArgument(FunctionArgumentRegister::X2),
+            width,
+        }
     }
 
-    
     pub fn frame_pointer() -> Self {
-        Register { kind: RegisterKind::FramePointer, width: Width::Long }
+        Register {
+            kind: RegisterKind::FramePointer,
+            width: Width::Long,
+        }
     }
 
     pub fn link_register() -> Self {
-        Register { kind: RegisterKind::LinkRegister, width: Width::Long }
+        Register {
+            kind: RegisterKind::LinkRegister,
+            width: Width::Long,
+        }
     }
 
     pub fn stack_pointer() -> Self {
-        Register { kind: RegisterKind::StackPointer, width: Width::Long }
+        Register {
+            kind: RegisterKind::StackPointer,
+            width: Width::Long,
+        }
     }
 
     pub fn addressing_mode(self) -> AddressingMode {
@@ -191,7 +208,6 @@ impl Branch {
         Branch::BranchLink(label.into())
     }
 
-
     pub fn branch_link_register(reg: Register) -> Branch {
         Branch::BranchLinkRegister(reg)
     }
@@ -211,7 +227,7 @@ impl ArithOp {
             nodes::Op::Plus => ArithOp::Add,
             nodes::Op::Mul => ArithOp::Mul,
             nodes::Op::Minus => ArithOp::Sub,
-            _ => todo!()
+            _ => todo!(),
         }
     }
 }
@@ -236,7 +252,7 @@ impl ConditionalCode {
             nodes::Op::Eq => ConditionalCode::Eq,
             nodes::Op::Lt => ConditionalCode::SignedLessThan,
             nodes::Op::Gt => ConditionalCode::SignedGreaterThan, // Todo: Add unsigned
-            _ => todo!()
+            _ => todo!(),
         }
     }
 }
@@ -279,7 +295,7 @@ pub enum Instruction {
     },
     CondSet {
         dest: Register,
-        cond: ConditionalCode
+        cond: ConditionalCode,
     },
 
     Load {
@@ -293,7 +309,6 @@ pub enum Instruction {
         source: Register,
         operand: AddressingMode,
     },
-    
 
     Branch(Branch),
     Arith(Arith),
@@ -364,33 +379,29 @@ impl ConditionalCode {
     }
 }
 
-
 impl Branch {
     fn to_string(&self) -> String {
         match self {
             Self::Cond((CondBranch::Equal, label)) => {
                 format!("beq {}", label.0)
-            },
+            }
 
             Self::Cond((CondBranch::NotEqual, label)) => {
                 format!("bne {}", label.0)
             }
             Self::BranchLink(label) => {
                 format!("bl {}", label.0)
-            },
+            }
             Self::BranchLinkRegister(reg) => {
                 format!("bl {}", reg.to_string())
-            },
-            Self::Return => {
-                "ret".into()
-            },
+            }
+            Self::Return => "ret".into(),
             Self::Unconditional(label) => {
                 format!("b {}", label.0)
-            },
+            }
         }
     }
 }
-
 
 impl Directive {
     fn to_string(&self) -> String {
@@ -407,60 +418,92 @@ impl Directive {
 impl Instruction {
     pub fn to_string(&self) -> String {
         match self {
-            Self::Mov { dest, operand } => format!("mov {}, {}", dest.to_string(), operand.to_string()),
-            Self::Load { width, dest, operand } => {
+            Self::Mov { dest, operand } => {
+                format!("mov {}, {}", dest.to_string(), operand.to_string())
+            }
+            Self::Load {
+                width,
+                dest,
+                operand,
+            } => {
                 let instruction_name = match width {
                     Width::Byte => "ldrb",
                     Width::Short => "ldrh",
                     Width::Word => "ldr",
-                    Width::Long => "ldr"
+                    Width::Long => "ldr",
                 };
 
-                format!("{} {}, {}", instruction_name, dest.to_string(), operand.to_string())
+                format!(
+                    "{} {}, {}",
+                    instruction_name,
+                    dest.to_string(),
+                    operand.to_string()
+                )
             }
 
-            Self::Store { width, source: dest, operand } => {
+            Self::Store {
+                width,
+                source: dest,
+                operand,
+            } => {
                 let instruction_name = match width {
                     Width::Byte => "strb",
                     Width::Short => "strh",
                     Width::Word => "str",
-                    Width::Long => "str"
+                    Width::Long => "str",
                 };
 
-                format!("{} {}, {}", instruction_name, dest.to_string(), operand.to_string())
-            },
+                format!(
+                    "{} {}, {}",
+                    instruction_name,
+                    dest.to_string(),
+                    operand.to_string()
+                )
+            }
 
             Self::Cmp { left, right } => {
                 format!("cmp {}, {}", left.to_string(), right.to_string())
-            },
+            }
 
-            Self::Arith(ar)  => {
+            Self::Arith(ar) => {
                 let arith_instr = ar.op.to_instr_string();
-                format!("{} {}, {}, {}", arith_instr, ar.dest.to_string(), ar.left.to_string(), ar.right.to_string())
-            },
+                format!(
+                    "{} {}, {}, {}",
+                    arith_instr,
+                    ar.dest.to_string(),
+                    ar.left.to_string(),
+                    ar.right.to_string()
+                )
+            }
 
             Self::CondSet { dest, cond } => {
                 format!("cset {}, {}", dest.to_string(), cond.to_string())
-            },
+            }
             Self::Label(lab) => {
                 format!("{}:", lab)
-            },
-            Self::Branch(b) => {
-                b.to_string()
-            },
+            }
+            Self::Branch(b) => b.to_string(),
             Self::StorePair { r1, r2, addressing } => {
-                format!("stp {}, {}, {}", r1.to_string(), r2.to_string(), addressing.to_string())
+                format!(
+                    "stp {}, {}, {}",
+                    r1.to_string(),
+                    r2.to_string(),
+                    addressing.to_string()
+                )
             }
             Self::LoadPair { r1, r2, addressing } => {
-                format!("ldp {}, {}, {}", r1.to_string(), r2.to_string(), addressing.to_string())
+                format!(
+                    "ldp {}, {}, {}",
+                    r1.to_string(),
+                    r2.to_string(),
+                    addressing.to_string()
+                )
             }
             Self::AdressPage { dest, symbol } => {
                 format!("adrp {}, {}@PAGE", dest.to_string(), symbol.0)
-            },
-            Self::Directive(dir) => {
-                dir.to_string()
-            },
-            _ => todo!()
+            }
+            Self::Directive(dir) => dir.to_string(),
+            _ => todo!(),
         }
     }
 }
