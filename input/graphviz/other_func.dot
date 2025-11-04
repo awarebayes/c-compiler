@@ -1,0 +1,17 @@
+digraph SSA {
+rankdir=TB;
+node [shape=rectangle, fontname="Courier"];
+start_function_other_func [label=<start_function_other_func<BR ALIGN="LEFT"/>    	%_t0 =w #5<BR ALIGN="LEFT"/>    	%a.0 =w %_t0<BR ALIGN="LEFT"/>    >];
+_l0 [label=<_l0<BR ALIGN="LEFT"/>    	%a.1 =w phi [%a.0, @start_function_other_func], [%a.2, @_l1]<BR ALIGN="LEFT"/>    	%_t1 =w %a.1<BR ALIGN="LEFT"/>    	%_t2 =w #0<BR ALIGN="LEFT"/>    	%_t3 =w %_t1 &gt; %_t2<BR ALIGN="LEFT"/>    	branch %_t0: _l1 _l2<BR ALIGN="LEFT"/>    >];
+_l1 [label=<_l1<BR ALIGN="LEFT"/>    	%_t4 =l s&#x27;a&#x27;<BR ALIGN="LEFT"/>    	param0 l %_t4<BR ALIGN="LEFT"/>    	%_t5 =w call %puts.0<BR ALIGN="LEFT"/>    	%_t6 =w #1<BR ALIGN="LEFT"/>    	%_t7 =w %a.1 - %_t6<BR ALIGN="LEFT"/>    	%a.2 =w %_t7<BR ALIGN="LEFT"/>    	jump _l0<BR ALIGN="LEFT"/>    >];
+_l2 [label=<_l2<BR ALIGN="LEFT"/>    	%a.3 =w phi [%a.0, @start_function_other_func], [%a.2, @_l1]<BR ALIGN="LEFT"/>    	%_t8 =w %a.3<BR ALIGN="LEFT"/>    >];
+_l0 -> _l1[label="true"];
+_l0 -> _l2[label="false"];
+start_function_other_func -> _l0;
+_l1 -> _l0;
+edge [color=red, style=dashed, constraint=false];
+start_function_other_func -> _l0[label="%a.0 -> phi"];
+_l1 -> _l0[label="%a.2 -> phi"];
+start_function_other_func -> _l2[label="%a.0 -> phi"];
+_l1 -> _l2[label="%a.2 -> phi"];
+}

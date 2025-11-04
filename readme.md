@@ -95,6 +95,10 @@ function w main () {
 }
 ```
 
+Graphviz generation
+
+<img width="1096" height="523" alt="Image" src="https://github.com/user-attachments/assets/165f1b2c-02c8-474c-84e9-98acbb17e192" />
+
 Aarch64 Mach-o asm
 
 ```asm

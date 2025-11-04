@@ -26,6 +26,10 @@ fn main() -> Result<(), Box<dyn Error>> {
     println!("--- IR ---");
     println!("{}", ssa_text);
 
+
+    let unopt_ir = "input/graphviz";
+    ir::graphviz_unit(&ssa, unopt_ir);
+
     let asm = asmgen::convert_unit_to_asm(&ssa);
     let asm_text = asmgen::asm_into_text(&asm);
 

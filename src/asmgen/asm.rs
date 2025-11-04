@@ -5,9 +5,9 @@ use crate::asmgen::aarch64::instructions::Symbol;
 use crate::asmgen::lookup_table::{SymbolAddress, SymbolLookup};
 use crate::common::StorageClass;
 use crate::common::Width;
+use crate::ir::ir_to_basic_blocks;
 use crate::ir::nodes;
 
-type BasicBlock = Vec<nodes::Ssa>;
 
 // fn address_to_asm_str(adress: &nodes::Address, lookup: &SymbolLookup) -> String {
 //     match address 
@@ -154,34 +154,11 @@ fn basic_block_to_asm(
                 }
             },
             
-            nodes::Ssa::Phi { dest, width, merging } => (),
-
+            nodes::Ssa::Phi { dest: _, width: _, merging: _ } => panic!("Phi functions should be eliminated at this stage!"),
             _ => todo!(),
         }
     }
     result
-}
-
-fn ir_to_basic_blocks(ir: &[nodes::Ssa]) -> Vec<BasicBlock> {
-    let mut blocks = vec![];
-    let mut current_block = vec![];
-
-    for node in ir {
-        match node {
-            nodes::Ssa::Label(_) |
-            nodes::Ssa::Return { value: _ } => {
-                if !current_block.is_empty() {
-                    blocks.push(current_block);
-                    current_block = vec![];
-                }
-            }
-            _ => (),
-        }
-
-        current_block.push(node.clone());
-    }
-
-    blocks
 }
 
 pub fn convert_function_body_ir_to_asm(ir: &[nodes::Ssa], func_name: &str, global_lookup: &SymbolLookup) -> Vec<instructions::Instruction> {
