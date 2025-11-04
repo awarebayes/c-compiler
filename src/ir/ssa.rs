@@ -1,23 +1,78 @@
+use std::cell::RefCell;
+use std::collections::HashMap;
+use std::rc::Rc;
+
 use crate::common::Width;
-use crate::ir::nodes::{self, FunctionDef, ToplevelItem};
+use crate::ir::nodes::{self, Address, FunctionDef, Label, ToplevelItem};
 use crate::semantic_analysis::{SymbolKind, SymbolType};
 use crate::{parsing::ast, semantic_analysis::SymbolTableRef};
 
-#[derive(Debug, Default, Clone, Copy)]
+#[derive(Debug, Clone)]
 struct State {
-    var_count: usize,
-    label_count: usize,
+    var_count: Rc<RefCell<usize>>,
+    label_count: Rc<RefCell<usize>>,
     return_width: Option<Width>,
-}
-
-#[derive(Debug, Clone, Copy)]
-struct VisitExtra {
-    expression_width: Width,
+    expression_width: Option<Width>,
+    parent_phi_label: Label,
+    source_counts: Rc<RefCell<HashMap<String, usize>>>
 }
 
 impl State {
-    pub fn last_var(&self) -> usize {
-        self.var_count - 1
+    fn new(return_width: Width, parent_phi_label: Label) -> Self {
+        Self {
+            parent_phi_label,
+            return_width: Some(return_width),
+            var_count: Rc::new(RefCell::new(0)),
+            label_count: Rc::new(RefCell::new(0)),
+            source_counts: Rc::new(RefCell::new(HashMap::new())),
+            expression_width: None,
+        }
+    }
+
+    fn with_parent_phi_label(&self, label: Label) -> Self {
+        let mut copy = self.clone();
+        copy.parent_phi_label = label;
+        copy
+    }
+
+    fn with_expr_width(&self, expression_width: Width) -> Self {
+        let mut copy = self.clone();
+        copy.expression_width = Some(expression_width);
+        copy
+    }
+
+    fn last_var(&self) -> usize {
+        *self.var_count.borrow() - 1
+    }
+
+    fn var_count(&self) -> usize {
+        *self.var_count.borrow()
+    }
+
+    fn label_count(&self) -> usize {
+        *self.label_count.borrow()
+    }
+
+    fn inc_var_cnt(&self) {
+        *self.var_count.borrow_mut() += 1;
+    }
+
+    fn inc_label_cnt(&self) {
+        *self.label_count.borrow_mut() += 1;
+    }
+
+    fn inc_source_address_count(&self, source_address: &str) -> usize {
+        let mut counts=  self.source_counts.borrow_mut();
+        // Todo: remove to_owned string copy
+        let entry = counts.entry(source_address.to_owned()).or_default();
+        *entry += 1;
+        *entry
+    }
+
+
+    fn get_last_address_count(&self, address: &str) -> usize {
+        let counts=  self.source_counts.borrow();
+        counts.get(address).cloned().unwrap_or_default()
     }
 }
 
@@ -25,37 +80,34 @@ trait SsaBuilder {
     fn visit(
         &self,
         symbol_table: SymbolTableRef,
-        state: State,
-        extra: Option<VisitExtra>,
-    ) -> (Vec<nodes::Ssa>, State);
+        state: &State,
+    ) -> Vec<nodes::Ssa>;
 }
 
 fn apply_assignment_to_exp(
     symbol_table: SymbolTableRef,
-    mut state: State,
+    state: &State,
     lvalue: &ast::Identifier,
     exp: &ast::Expression,
     assigment_type: &ast::AssignmentType,
-    extra: Option<VisitExtra>,
-) -> (Vec<nodes::Ssa>, State) {
-    let (mut new_ssas, new_state) = exp.visit(symbol_table, state, extra);
-    state = new_state;
+) -> Vec<nodes::Ssa> {
+    let mut new_ssas = exp.visit(symbol_table, state);
 
     let assignment_op = assigment_type.to_op().map(|op| nodes::Op::from_binop(&op));
     match assignment_op {
         Some(op) => {
             new_ssas.push(nodes::Ssa::Quadriplet(nodes::Quadriplet {
-                dest: nodes::Address::compiler_temp(state.var_count),
+                dest: nodes::Address::compiler_temp(state.var_count()),
                 op: op,
-                left: nodes::Address::source(lvalue.0.clone()),
+                left: nodes::Address::source_count(lvalue.0.clone(), state.get_last_address_count(&lvalue.0)),
                 right: Some(nodes::Address::compiler_temp(state.last_var())),
-                width: extra.unwrap().expression_width,
+                width: state.expression_width.unwrap(),
             }));
-            state.var_count += 1;
+            state.inc_var_cnt();
         }
         None => (),
     }
-    (new_ssas, state)
+    new_ssas
 }
 
 enum ExpressionWidth {
@@ -111,74 +163,88 @@ fn expression_width(symbol_table: SymbolTableRef, expression: &ast::Expression) 
     }
 }
 
+struct ChangedPhiVar {
+    source_var: Address,
+    compiler_temp: Address,
+    width: Width,
+}
+
+fn changed_phi_vars(ir: &[nodes::Ssa]) -> Vec<ChangedPhiVar> {
+    ir.iter()
+        .filter_map(|instruction| match instruction {
+            nodes::Ssa::Assignment { dest, source, width } 
+                if matches!(dest, nodes::Address::Source(_)) 
+                => Some(ChangedPhiVar { source_var: dest.clone(), compiler_temp: source.clone(), width: *width }),
+            _ => None,
+        })
+        .collect()
+}
+
 impl SsaBuilder for &ast::Expression {
     fn visit(
         &self,
         symbol_table: SymbolTableRef,
-        mut state: State,
-        extra: Option<VisitExtra>,
-    ) -> (Vec<nodes::Ssa>, State) {
+        state: &State,
+    ) -> Vec<nodes::Ssa> {
         let mut nodes = vec![];
         match self {
             ast::Expression::Identifier(id) => {
                 let dtype = symbol_table.borrow().query(&id.0);
                 let width = Width::from_type(&dtype.unwrap().type_info);
-                if let Some(ex) = extra {
-                    assert_eq!(ex.expression_width, width)
+                if let Some(w) = state.expression_width {
+                    assert_eq!(w, width)
                 }
                 nodes.push(nodes::Ssa::Assignment {
-                    dest: nodes::Address::compiler_temp(state.var_count),
-                    source: nodes::Address::source(id.0.clone()),
+                    dest: nodes::Address::compiler_temp(state.var_count()),
+                    source: nodes::Address::source_count( id.0.clone(), state.get_last_address_count(&id.0) ),
                     width,
                 });
-                state.var_count += 1;
+                state.inc_var_cnt();
             }
             ast::Expression::Binary(bin) => {
-                let mut width = extra;
+                let mut new_state = state.clone();
                 let estimated_width = expression_width(symbol_table.clone(), self);
-                if let Some(extra) = extra {
-                    if let ExpressionWidth::Some(est) = estimated_width {
-                        assert_eq!(extra.expression_width, est)
+                if let Some(w) = &state.expression_width {
+                    if let ExpressionWidth::Some(est) = &estimated_width {
+                        assert_eq!(w, est)
                     }
                 } else {
                     if let ExpressionWidth::Some(est) = estimated_width {
-                        width = Some(VisitExtra {
-                            expression_width: est,
-                        })
+                        new_state = state.with_expr_width(est)
                     } else {
                         panic!("Width is neither provided nor can be estimated");
                     }
                 }
 
-                let (left_expression, new_state) =
-                    bin.left.as_ref().visit(symbol_table.clone(), state, width);
-                state = new_state;
-                let left_temp_id = state.last_var();
-                let (right_expression, new_state) =
-                    bin.right.as_ref().visit(symbol_table.clone(), state, width);
-                state = new_state;
-                let right_temp_id = state.last_var();
+                let left_expression =
+                    bin.left.as_ref().visit(symbol_table.clone(), &new_state);
+
+                let left_temp_id = new_state.last_var();
+                let right_expression =
+                    bin.right.as_ref().visit(symbol_table.clone(), &new_state);
+
+                let right_temp_id = new_state.last_var();
                 nodes.extend(left_expression);
                 nodes.extend(right_expression);
 
                 nodes.push(nodes::Ssa::Quadriplet(nodes::Quadriplet {
-                    dest: nodes::Address::CompilerTemp(state.var_count),
+                    dest: nodes::Address::CompilerTemp(new_state.var_count()),
                     op: nodes::Op::from_binop(&bin.op),
                     left: nodes::Address::CompilerTemp(left_temp_id),
                     right: Some(nodes::Address::CompilerTemp(right_temp_id)),
-                    width: width.unwrap().expression_width,
+                    width: new_state.expression_width.unwrap(),
                 }));
-                state.var_count += 1;
+                new_state.inc_var_cnt();
             }
             ast::Expression::NumberLiteral(nl) => {
                 nodes.push(nodes::Ssa::Assignment {
-                    dest: nodes::Address::compiler_temp(state.var_count),
+                    dest: nodes::Address::compiler_temp(state.var_count()),
                     source: nodes::Address::constant(nodes::AddressConstant::Numeric(
                         nl.0.parse().unwrap(),
                     )),
-                    width: extra.unwrap().expression_width,
+                    width: state.expression_width.unwrap(),
                 });
-                state.var_count += 1;
+                state.inc_var_cnt();
             }
             ast::Expression::Call(ce) => {
                 let mut args_temps = vec![];
@@ -206,25 +272,20 @@ impl SsaBuilder for &ast::Expression {
                     if let ExpressionWidth::Some(est) = estimated_width {
                         assert_eq!(width, est);
                     }
-                    let (arg_ssa, new_state) = arg.visit(
+                    let arg_ssa = arg.visit(
                         symbol_table.clone(),
                         state,
-                        Some(VisitExtra {
-                            expression_width: width,
-                        }),
                     );
-                    state = new_state;
                     let arg_temp = state.last_var();
                     nodes.extend(arg_ssa);
                     args_temps.push((arg_temp, width))
                 }
 
                 let function_adress = match ce.function.as_ref() {
-                    ast::Expression::Identifier(id) => nodes::Address::Source(id.0.clone()),
+                    ast::Expression::Identifier(id) => nodes::Address::source_count(id.0.clone(), 0),
                     _ => {
-                        let (function_ssa, new_state) =
-                            ce.function.as_ref().visit(symbol_table, state, None);
-                        state = new_state;
+                        let function_ssa =
+                            ce.function.as_ref().visit(symbol_table, state);
                         let function_temp = state.last_var();
                         nodes.extend(function_ssa);
                         nodes::Address::CompilerTemp(function_temp)
@@ -244,41 +305,40 @@ impl SsaBuilder for &ast::Expression {
                 let return_width = Width::from_type(&symbol.type_info);
 
                 nodes.push(nodes::Ssa::Call {
-                    dest: Some((nodes::Address::CompilerTemp(state.var_count), return_width)),
+                    dest: Some((nodes::Address::CompilerTemp(state.var_count()), return_width)),
                     func: function_adress,
                     num_params: ce.arguments.len(),
                 });
-                state.var_count += 1;
+                state.inc_var_cnt();
             }
             ast::Expression::Empty => (),
             ast::Expression::StringLiteral(sl) => {
                 nodes.push(nodes::Ssa::Assignment {
-                    dest: nodes::Address::compiler_temp(state.var_count),
+                    dest: nodes::Address::compiler_temp(state.var_count()),
                     source: nodes::Address::constant(nodes::AddressConstant::StringLiteral(
                         sl.0.clone(),
                     )),
                     width: Width::Long,
                 });
-                state.var_count += 1;
+                state.inc_var_cnt();
             }
             ast::Expression::Assignment(ast) => match &ast.lvalue {
                 ast::LValue::Identifier(id) => {
                     let identifier_type = symbol_table.borrow().query(&id.0).unwrap().type_info;
                     let identifier_width = Width::from_type(&identifier_type);
-                    let (exp_ssas, new_state) = apply_assignment_to_exp(
+                    let exp_ssas = apply_assignment_to_exp(
                         symbol_table,
-                        state,
+                        &state.with_expr_width(identifier_width),
                         id,
                         ast.rvalue.as_ref(),
                         &ast.atype,
-                        Some(VisitExtra {
-                            expression_width: identifier_width,
-                        }),
                     );
-                    state = new_state;
                     nodes.extend(exp_ssas);
+
+                    let count = state.inc_source_address_count(&id.0);
+
                     nodes.push(nodes::Ssa::Assignment {
-                        dest: nodes::Address::Source(id.0.clone()),
+                        dest: nodes::Address::source_count(id.0.clone(), count),
                         source: nodes::Address::CompilerTemp(state.last_var()),
                         width: identifier_width,
                     });
@@ -286,7 +346,7 @@ impl SsaBuilder for &ast::Expression {
             },
             _ => todo!(),
         }
-        (nodes, state)
+        nodes
     }
 }
 
@@ -294,51 +354,59 @@ impl SsaBuilder for &ast::IfStatement {
     fn visit(
         &self,
         symbol_table: SymbolTableRef,
-        mut state: State,
-        extra: Option<VisitExtra>,
-    ) -> (Vec<nodes::Ssa>, State) {
+        state: &State,
+    ) -> Vec<nodes::Ssa> {
         let mut out = vec![];
         match self.else_body.as_ref() {
             None => {
-                let (expr_ssas, new_state) =
+                let expr_ssas =
                     self.condition
                         .expression
                         .as_ref()
-                        .visit(symbol_table.clone(), state, None);
+                        .visit(symbol_table.clone(), state);
 
-                state = new_state;
 
-                let true_label = nodes::Label::compiler_temp(state.label_count);
-                let false_label = nodes::Label::compiler_temp(state.label_count + 1);
+                let true_label = nodes::Label::compiler_temp(state.label_count());
+                let false_label = nodes::Label::compiler_temp(state.label_count() + 1);
                 out.extend(expr_ssas);
                 out.push(nodes::Ssa::Branch {
                     cond: nodes::Address::compiler_temp(state.last_var()),
                     true_target: true_label.clone(),
                     false_target: false_label.clone(),
                 });
-                state.label_count += 2;
 
-                out.push(nodes::Ssa::Label(true_label));
+                state.inc_label_cnt();
+                state.inc_label_cnt();
 
-                let (true_ssas, new_state) =
-                    self.body.as_ref().visit(symbol_table.clone(), state, None);
+                out.push(nodes::Ssa::Label(true_label.clone()));
 
-                state = new_state;
+                let true_ssas =
+                    self.body.as_ref().visit(symbol_table.clone(), state);
+
+                let changed_phi_vars = changed_phi_vars(&true_ssas);
                 out.extend(true_ssas);
                 out.push(nodes::Ssa::Label(false_label));
+
+                out.extend(changed_phi_vars.iter().map(|var| {
+                    nodes::Ssa::Phi { dest: var.source_var.clone(), width: var.width, merging: vec![
+                        (var.compiler_temp.clone(), true_label.clone()),
+                        (var.source_var.clone(), state.parent_phi_label.clone())
+                    ] }
+                }));
             }
             Some(body) => {
-                let (expr_ssas, new_state) =
+                let expr_ssas =
                     self.condition
                         .expression
                         .as_ref()
-                        .visit(symbol_table.clone(), state, None);
+                        .visit(symbol_table.clone(), &state.clone());
 
-                state = new_state;
-                let true_label = nodes::Label::compiler_temp(state.label_count);
-                let false_label = nodes::Label::compiler_temp(state.label_count + 1);
-                let end_label = nodes::Label::compiler_temp(state.label_count + 2);
-                state.label_count += 3;
+                let true_label = nodes::Label::compiler_temp(state.label_count());
+                let false_label = nodes::Label::compiler_temp(state.label_count() + 1);
+                let end_label = nodes::Label::compiler_temp(state.label_count() + 2);
+                state.inc_label_cnt();
+                state.inc_label_cnt();
+                state.inc_label_cnt();
 
                 out.extend(expr_ssas);
                 out.push(nodes::Ssa::Branch {
@@ -348,24 +416,22 @@ impl SsaBuilder for &ast::IfStatement {
                 });
                 out.push(nodes::Ssa::Label(true_label));
 
-                let (true_ssas, new_state) =
-                    self.body.as_ref().visit(symbol_table.clone(), state, None);
+                let true_ssas =
+                    self.body.as_ref().visit(symbol_table.clone(), state);
 
-                state = new_state;
                 out.extend(true_ssas);
                 out.push(nodes::Ssa::Jump(end_label.clone()));
                 out.push(nodes::Ssa::Label(false_label));
 
-                let (false_ssas, new_state) =
-                    body.as_ref().visit(symbol_table.clone(), state, None);
+                let false_ssas =
+                    body.as_ref().visit(symbol_table.clone(), state);
 
-                state = new_state;
                 out.extend(false_ssas);
                 out.push(nodes::Ssa::Label(end_label));
             }
         }
 
-        (out, state)
+        out
     }
 }
 
@@ -373,23 +439,22 @@ impl SsaBuilder for &ast::WhileStatement {
     fn visit(
         &self,
         symbol_table: SymbolTableRef,
-        mut state: State,
-        extra: Option<VisitExtra>,
-    ) -> (Vec<nodes::Ssa>, State) {
+        state: &State,
+    ) -> Vec<nodes::Ssa> {
         let mut out = vec![];
 
-        let (expr_ssas, new_state) =
+        let expr_ssas =
             self.condition
                 .expression
                 .as_ref()
-                .visit(symbol_table.clone(), state, None);
+                .visit(symbol_table.clone(), state);
 
-        state = new_state;
-
-        let cond_label = nodes::Label::compiler_temp(state.label_count);
-        let start_label = nodes::Label::compiler_temp(state.label_count + 1);
-        let end_label = nodes::Label::compiler_temp(state.label_count + 2);
-        state.label_count += 3;
+        let cond_label = nodes::Label::compiler_temp(state.label_count());
+        let start_label = nodes::Label::compiler_temp(state.label_count() + 1);
+        let end_label = nodes::Label::compiler_temp(state.label_count() + 2);
+        state.inc_label_cnt();
+        state.inc_label_cnt();
+        state.inc_label_cnt();
 
         out.push(nodes::Ssa::Label(cond_label.clone()));
         out.extend(expr_ssas);
@@ -400,14 +465,13 @@ impl SsaBuilder for &ast::WhileStatement {
         });
         out.push(nodes::Ssa::Label(start_label));
 
-        let (body_ssas, new_state) = self.body.as_ref().visit(symbol_table.clone(), state, None);
+        let body_ssas = self.body.as_ref().visit(symbol_table.clone(), state);
 
-        state = new_state;
         out.extend(body_ssas);
         out.push(nodes::Ssa::Jump(cond_label));
         out.push(nodes::Ssa::Label(end_label));
 
-        (out, state)
+        out
     }
 }
 
@@ -415,15 +479,14 @@ impl SsaBuilder for &ast::Statement {
     fn visit(
         &self,
         symbol_table: SymbolTableRef,
-        mut state: State,
-        extra: Option<VisitExtra>,
-    ) -> (Vec<nodes::Ssa>, State) {
+        state: &State,
+    ) -> Vec<nodes::Ssa> {
         match self {
             ast::Statement::Declaration(decl) => match decl.declarator.as_ref() {
                 ast::Declarator::FunctionDeclarator(_)
                 | ast::Declarator::Identifier(_)
                 | ast::Declarator::PointerDeclarator(_) => {
-                    return (vec![], state);
+                    return vec![];
                 }
                 ast::Declarator::InitDeclarator(id) => {
                     let var_name = &decl.declarator.get_identifier().0;
@@ -433,36 +496,33 @@ impl SsaBuilder for &ast::Statement {
                         &symbol_table.borrow().query(&var_name).unwrap().type_info,
                     );
 
-                    let (mut expr_ssas, new_state) = expr.visit(
+                    let mut expr_ssas = expr.visit(
                         symbol_table,
-                        state,
-                        Some(VisitExtra {
-                            expression_width: width,
-                        }),
+                        &state.with_expr_width(width),
                     );
-                    state = new_state;
                     let last_id = state.last_var();
 
+                    let count = state.inc_source_address_count(&var_name);
+
                     expr_ssas.push(nodes::Ssa::Assignment {
-                        dest: nodes::Address::source(var_name.clone()),
+                        dest: nodes::Address::source_count(var_name.clone(), count) ,
                         source: nodes::Address::compiler_temp(last_id),
                         width: width,
                     });
 
-                    (expr_ssas, state)
+                    expr_ssas
                 }
             },
             ast::Statement::ReturnStatement(rs) => {
                 if matches!(rs.expression, ast::Expression::Empty) {
-                    return (vec![nodes::Ssa::Return { value: None }], state);
+                    return vec![nodes::Ssa::Return { value: None }];
                 } else {
                     let expr_width = expression_width(symbol_table.clone(), &rs.expression);
                     if let ExpressionWidth::Some(est) = expr_width {
                         assert_eq!(est, state.return_width.unwrap());
                     }
-                    let (mut expr_ssas, new_state) =
-                        (&rs.expression).visit(symbol_table, state, None);
-                    state = new_state;
+                    let mut expr_ssas =
+                        (&rs.expression).visit(symbol_table, state);
                     let expression_res_var = state.last_var();
                     expr_ssas.push(nodes::Ssa::Return {
                         value: Some((
@@ -470,17 +530,17 @@ impl SsaBuilder for &ast::Statement {
                             state.return_width.unwrap(),
                         )),
                     });
-                    state.var_count += 1;
-                    return (expr_ssas, state);
+                    state.inc_var_cnt();
+                    return expr_ssas;
                 }
             }
             ast::Statement::ExpressionStatement(es) => {
-                let (expr_ssas, new_count) = (&es.expression).visit(symbol_table, state, None);
-                (expr_ssas, new_count)
+                let expr_ssas = (&es.expression).visit(symbol_table, state);
+                expr_ssas
             }
-            ast::Statement::IfStatement(ifs) => ifs.visit(symbol_table, state, None),
-            ast::Statement::WhileStatement(cs) => cs.visit(symbol_table, state, None),
-            ast::Statement::CompoundStatement(cs) => cs.visit(symbol_table, state, None),
+            ast::Statement::IfStatement(ifs) => ifs.visit(symbol_table, state),
+            ast::Statement::WhileStatement(cs) => cs.visit(symbol_table, state),
+            ast::Statement::CompoundStatement(cs) => cs.visit(symbol_table, state),
         }
     }
 }
@@ -489,20 +549,18 @@ impl SsaBuilder for &ast::CompoundStatement {
     fn visit(
         &self,
         symbol_table: SymbolTableRef,
-        mut state: State,
-        extra: Option<VisitExtra>,
-    ) -> (Vec<nodes::Ssa>, State) {
+        state: &State,
+    ) -> Vec<nodes::Ssa> {
         let mut ssas = vec![];
 
         // TODO: ADJUST SYMBOL TABLE HERE!!!!!!!!!!!!!
 
         for statement in &self.items {
-            let (new_ssas, new_var_count) = statement.visit(symbol_table.clone(), state, None);
-            state = new_var_count;
+            let new_ssas = statement.visit(symbol_table.clone(), &state);
             ssas.extend(new_ssas);
         }
 
-        (ssas, state)
+        ssas
     }
 }
 
@@ -537,19 +595,19 @@ fn function_ssa(fd: &ast::FunctionDefinition, symbol_table: SymbolTableRef) -> T
     let function_symbol_type = &global_context.borrow().symbols[&function_name].type_info;
     let return_width = Width::from_type(function_symbol_type);
 
+    let begin_label = Label::source(format!("start_function_{}", function_name));
+
     ToplevelItem::Function(FunctionDef {
         name: function_name,
         parameters,
-        body: (&fd.body)
+        body: ([
+            vec![nodes::Ssa::Label(begin_label.clone())],
+            (&fd.body)
             .visit(
                 symbol_table,
-                State {
-                    return_width: Some(return_width),
-                    ..Default::default()
-                },
-                None,
-            )
-            .0,
+                &State::new(return_width, begin_label)
+            ),
+            ]).concat(),
         return_width: return_width,
     })
 }

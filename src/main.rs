@@ -9,8 +9,6 @@ use semantic_analysis::SymbolTable;
 
 use std::{error::Error, fs};
 
-use crate::parsing::ast;
-
 fn main() -> Result<(), Box<dyn Error>> {
     let source_path = "input/hello_world.c";
     let source_code = fs::read_to_string(source_path)?;
@@ -31,8 +29,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     let asm = asmgen::convert_unit_to_asm(&ssa);
     let asm_text = asmgen::asm_into_text(&asm);
 
-    println!("--- ASM ---");
-    println!("{}", asm_text);
+    // println!("--- ASM ---");
+    // println!("{}", asm_text);
 
     let out_path = "input/codegen.asm";
     fs::write(out_path, asm_text).unwrap();

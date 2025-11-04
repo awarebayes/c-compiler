@@ -95,7 +95,7 @@ impl SymbolLookup {
                 nodes::ToplevelItem::Declaration(decl) => {
                     match decl {
                         nodes::ToplevelDeclaration::Function { storage_class: _, name, return_width: _, parameters: _ } => {
-                            let addr = nodes::Address::Source(name.clone());
+                            let addr = nodes::Address::source_count(name.clone(), 0);
                             let info = SymbolInfo {
                                 address: SymbolAddress::SourceFunction(name.clone()),
                                 width: Width::Long,
@@ -105,7 +105,7 @@ impl SymbolLookup {
                     }
                 },
                 nodes::ToplevelItem::Function(func) => {
-                    let addr = nodes::Address::Source(func.name.clone());
+                    let addr = nodes::Address::source_count(func.name.clone(), 0);
                     let info = SymbolInfo {
                         address: SymbolAddress::SourceFunction(func.name.clone()),
                         width: Width::Long,

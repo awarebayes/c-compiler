@@ -1,21 +1,13 @@
 extern int puts(char *str);
 
-int other_func() {
-   int a = 5;
-   while (a > 0)
-   {
-      puts("a");
-      a -= 1;
-   }
-   return a;
-}
-
 int main() {
-   int b = other_func();
-   puts("b");
-   int c = other_func();
-   int g = b + c;
-   puts("c");
-   return g;
+   int a = 0;
+   int b = 5;
+   if (a == 0) {
+      a += 1;
+      b -= 1;
+   }
+   int b = a;
+   return a;
 }
 

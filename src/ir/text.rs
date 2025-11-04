@@ -44,7 +44,7 @@ impl IrTextRepr for nodes::Address {
     fn to_ir_string(&self) -> String {
         match self {
             Self::CompilerTemp(ct) => format!("%_t{}", ct),
-            Self::Source(s) => format!("%{}", s),
+            Self::Source((s, c)) => format!("%{}.{}", s, c),
             Self::Constant(c) => c.to_ir_string(),
         }
     }
@@ -141,6 +141,12 @@ impl IrTextRepr for nodes::Ssa {
             }
             nodes::Ssa::Jump(label) => {
                 format!("jump {}", label.to_ir_string())
+            },
+            nodes::Ssa::Phi {dest,  width, merging } => {
+                let merging_expr = merging.iter().map(| (addr, lab) | {
+                    format!("[{}, @{}]", addr.to_ir_string(), lab.to_ir_string())
+                }).collect::<Vec<_>>().join(", ");
+                format!("{} ={} phi {}", dest.to_ir_string(), width.to_ir_string(), merging_expr)
             }
         }
     }
@@ -172,7 +178,6 @@ impl IrTextRepr for nodes::ToplevelItem {
                     f.name,
                     parameters
                 );
-                s.push_str("@start\n");
                 for block in &f.body {
                     s.push_str(&block.to_ir_string());
                     s.push_str("\n");

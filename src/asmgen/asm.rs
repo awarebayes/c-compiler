@@ -17,7 +17,7 @@ impl nodes::Label {
     fn to_asm_label(&self) -> String {
         match self {
             Self::CompilerTemp(ct) => format!("L{}", ct),
-            Self::Source(s) => s.clone(),
+            Self::Source(s) => s.as_str().to_owned(),
         }
     }
 }
@@ -141,7 +141,7 @@ fn basic_block_to_asm(
                         result.push(Instruction::Branch(instructions::Branch::branch_link_register(x0)));
                     }, 
                     nodes::Address::Source(source) => {
-                        result.push(Instruction::Branch(instructions::Branch::branch_link(instructions::Label("_".to_string() + source.as_str()))));
+                        result.push(Instruction::Branch(instructions::Branch::branch_link(instructions::Label(format!("_{}.{}", source.0, source.1)))));
                     },
                     nodes::Address::Constant(_)  => {
                         panic!("Cannot call a constant! Unless maybe blr?");

@@ -157,7 +157,7 @@ impl From<nodes::Label> for Label {
     fn from(value: nodes::Label) -> Self {
         match value {
             nodes::Label::CompilerTemp(ct) => Label(format!("L{}", ct)),
-            nodes::Label::Source(s) => Label(s),
+            nodes::Label::Source(s) => Label(s.as_str().to_owned()),
         }
     }
 }

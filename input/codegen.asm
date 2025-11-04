@@ -6,6 +6,7 @@ _other_func:
 stp x29, x30, [sp, -16]!
 mov x29, sp
 sub sp, sp, 48
+start_function_other_func:
 mov w0, 5
 str w0, [sp, 0]
 ldr w0, [sp, 0]
@@ -51,6 +52,7 @@ _main:
 stp x29, x30, [sp, -16]!
 mov x29, sp
 sub sp, sp, 64
+start_function_main:
 bl _other_func
 str w0, [sp, 0]
 ldr w0, [sp, 0]
@@ -88,9 +90,9 @@ add sp, sp, 64
 ldp x29, x30, [sp], 16
 ret
 .section __TEXT,__cstring
-sl2:
-.asciz "c"
-sl0:
-.asciz "a"
 sl1:
 .asciz "b"
+sl0:
+.asciz "a"
+sl2:
+.asciz "c"

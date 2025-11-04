@@ -1,3 +1,5 @@
+use std::rc::Rc;
+
 use crate::{
     common::{StorageClass, Width},
     parsing::ast,
@@ -52,14 +54,14 @@ pub enum AddressConstant {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Address {
-    Source(String),
+    Source((Rc<String>, usize)),
     CompilerTemp(usize),
     Constant(AddressConstant),
 }
 
 impl Address {
-    pub fn source(s: String) -> Self {
-        Address::Source(s)
+    pub fn source_count(s: String, count: usize) -> Self {
+        Address::Source((Rc::new(s), count))
     }
 
     pub fn constant(c: AddressConstant) -> Self {
@@ -69,17 +71,24 @@ impl Address {
     pub fn compiler_temp(n: usize) -> Self {
         Address::CompilerTemp(n)
     }
+
+    pub fn get_source(&self) -> &str {
+        match self {
+            Self::Source(s) => &s.0,
+            _ => panic!("Not a source var")
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
 pub enum Label {
-    Source(String),
+    Source(Rc<String>),
     CompilerTemp(usize),
 }
 
 impl Label {
     pub fn source(s: String) -> Self {
-        Label::Source(s)
+        Label::Source(Rc::new(s))
     }
     pub fn compiler_temp(n: usize) -> Self {
         Label::CompilerTemp(n)
@@ -88,13 +97,19 @@ impl Label {
 
 #[derive(Debug, Clone)]
 pub enum Ssa {
-    // Triplet
+    // Quadriplet
     Quadriplet(Quadriplet),
 
     Assignment {
         dest: Address,
         source: Address,
         width: Width,
+    },
+
+    Phi {
+        dest: Address,
+        width: Width,
+        merging: Vec<(Address, Label)>,
     },
 
     // Function parameters: param value
