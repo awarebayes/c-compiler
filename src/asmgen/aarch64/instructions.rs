@@ -91,6 +91,11 @@ pub struct Register {
 }
 
 impl Register {
+
+    pub fn align(&self, width: Width) -> Self {
+        Register { kind: self.kind, width }
+    }
+
     pub fn x0(width: Width) -> Self {
         Register {
             kind: RegisterKind::FunctionArgument(FunctionArgumentRegister::X0),
@@ -108,6 +113,41 @@ impl Register {
     pub fn x2(width: Width) -> Self {
         Register {
             kind: RegisterKind::FunctionArgument(FunctionArgumentRegister::X2),
+            width,
+        }
+    }
+
+    pub fn x3(width: Width) -> Self {
+        Register {
+            kind: RegisterKind::FunctionArgument(FunctionArgumentRegister::X3),
+            width,
+        }
+    }
+
+    pub fn x4(width: Width) -> Self {
+        Register {
+            kind: RegisterKind::FunctionArgument(FunctionArgumentRegister::X4),
+            width,
+        }
+    }
+
+    pub fn x5(width: Width) -> Self {
+        Register {
+            kind: RegisterKind::FunctionArgument(FunctionArgumentRegister::X5),
+            width,
+        }
+    }
+
+    pub fn x6(width: Width) -> Self {
+        Register {
+            kind: RegisterKind::FunctionArgument(FunctionArgumentRegister::X6),
+            width,
+        }
+    }
+
+    pub fn x7(width: Width) -> Self {
+        Register {
+            kind: RegisterKind::FunctionArgument(FunctionArgumentRegister::X7),
             width,
         }
     }

@@ -7,19 +7,9 @@ const STACK_ALIGN: usize = 16;
 
 #[derive(Debug, Clone)]
 pub enum SymbolAddress {
-    VariableOffset(usize),
+    // VariableOffset(usize),
     StringLiteral(usize),
     SourceFunction(String),
-}
-
-impl SymbolAddress {
-    pub fn offset(&self) -> i64 {
-        match self {
-            Self::VariableOffset(vo) => *vo as i64,
-            Self::StringLiteral(_) => panic!(),
-            Self::SourceFunction(_) => panic!(),
-        }
-    }
 }
 
 #[derive(Debug, Clone)]
@@ -44,48 +34,6 @@ impl SymbolLookup {
             .map(|x| x.width.to_bytes())
             .sum::<usize>()
             .next_multiple_of(STACK_ALIGN)
-    }
-
-    pub fn from_fn_body(ir: &[nodes::Ssa]) -> Self {
-        let mut offset = 0;
-        let mut lookup = HashMap::new();
-        for n in ir {
-            let (addr, width) = match n {
-                nodes::Ssa::Assignment {
-                    dest,
-                    source: _,
-                    width,
-                } => (dest, width),
-                nodes::Ssa::Quadriplet(quad) => (&quad.dest, &quad.width),
-                nodes::Ssa::Phi(phi) => (&phi.dest, &phi.width),
-
-                nodes::Ssa::Call {
-                    dest,
-                    func: _,
-                    num_params: _,
-                } => {
-                    if let Some((dest, width)) = dest {
-                        (dest, width)
-                    } else {
-                        continue;
-                    }
-                }
-
-                _ => continue,
-            };
-
-            if !lookup.contains_key(addr) {
-                lookup.insert(
-                    addr.clone(),
-                    SymbolInfo {
-                        address: SymbolAddress::VariableOffset(offset),
-                        width: *width,
-                    },
-                );
-                offset += width.to_bytes();
-            }
-        }
-        SymbolLookup { lookup }
     }
 
     pub fn global_from_unit(toplevels: &[nodes::ToplevelItem]) -> Self {
