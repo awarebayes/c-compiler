@@ -6,7 +6,7 @@ int main() {
    while (a > 0)
    {
       a -= 1;
-      printf("A is now %d\n", a);
+      printf("Hello world %d\n", a);
    }
    return 0;
 }

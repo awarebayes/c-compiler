@@ -64,4 +64,4 @@ ldp x29, x30, [sp], 16
 ret
 .section __TEXT,__cstring
 sl0:
-.asciz "A is now %d\n"
+.asciz "Hello world %d\n"

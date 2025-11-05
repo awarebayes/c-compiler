@@ -129,6 +129,7 @@ pub struct Scope {
 pub struct SymbolTable {
     pub current_scope: Rc<RefCell<Scope>>,
     pub global_scope: Rc<RefCell<Scope>>,
+    pub stack: Rc<RefCell<Vec<usize>>>,
 }
 
 impl SymbolTable {
@@ -150,6 +151,18 @@ impl SymbolTable {
         Rc::new(RefCell::new(SymbolTable {
             current_scope: scope,
             global_scope: self.global_scope.clone(),
+            stack: Rc::new(RefCell::new(vec![])),
+        }))
+    }
+
+    pub fn fake_parent(&self) -> SymbolTableRef {
+        Rc::new(RefCell::new(SymbolTable {
+            current_scope: Rc::new(RefCell::new(Scope { symbols: HashMap::new(),
+                 parent: None,
+                children: vec![self.current_scope.clone()]
+            })),
+            global_scope: self.global_scope.clone(),
+            stack: Rc::new(RefCell::new(vec![])),
         }))
     }
 
@@ -178,6 +191,7 @@ impl SymbolTable {
         let table = Rc::new(RefCell::new(SymbolTable {
             current_scope: global_scope.clone(),
             global_scope: global_scope.clone(),
+            stack: Rc::new(RefCell::new(vec![])),
         }));
         unit.visit(table.clone(), None);
 
@@ -200,6 +214,28 @@ impl SymbolTable {
             }
         }
     }
+
+    pub fn compound_enter(&mut self) {
+        self.stack.borrow_mut().push(0);
+        let current_child = *self.stack.borrow().last().unwrap();
+        let new_scope = self.current_scope.borrow().children[current_child].clone(); 
+        self.current_scope = new_scope;
+    }
+
+    pub fn compound_next(&mut self) {
+        *self.stack.borrow_mut().last_mut().unwrap() += 1;
+        let current_child = *self.stack.borrow().last().unwrap();
+        let new_scope = self.current_scope.borrow().children[current_child].clone(); 
+        self.current_scope = new_scope;
+    }
+
+    pub fn compound_exit(&mut self) {
+        self.stack.borrow_mut().pop();
+        let new_scope = self.current_scope.borrow().parent.clone().unwrap();
+        self.current_scope = new_scope;
+    }
+
+
 }
 
 pub type SymbolTableRef = Rc<RefCell<SymbolTable>>;

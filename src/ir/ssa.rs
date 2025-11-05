@@ -764,24 +764,34 @@ impl SsaBuilder for &ast::Statement {
             }
             ast::Statement::IfStatement(ifs) => ifs.visit(symbol_table, state),
             ast::Statement::WhileStatement(cs) => cs.visit(symbol_table, state),
-            ast::Statement::CompoundStatement(cs) => cs.visit(symbol_table, state),
+            ast::Statement::CompoundStatement(cs) => {
+                cs.visit(symbol_table, state)
+            }
         }
     }
 }
 
 impl SsaBuilder for &ast::CompoundStatement {
-    fn visit(&self, symbol_table: SymbolTableRef, state: &State) -> Vec<nodes::Ssa> {
+    fn visit(&self, mut symbol_table: SymbolTableRef, state: &State) -> Vec<nodes::Ssa> {
+
+        symbol_table.borrow_mut().compound_enter();
+
         let mut ssas = vec![];
 
-        // TODO: ADJUST SYMBOL TABLE HERE!!!!!!!!!!!!!
-
         for statement in &self.items {
-            let new_ssas = statement.visit(symbol_table.clone(), &state);
+            let new_ssas = if matches!(statement, ast::Statement::CompoundStatement(_)) {
+                statement.visit(symbol_table.clone(), &state)
+            } else {
+                statement.visit(symbol_table.clone(), &state)
+            };
             ssas.extend(new_ssas);
         }
 
+        symbol_table.borrow_mut().compound_exit();
+
         ssas
     }
+
 }
 
 fn function_ssa(fd: &ast::FunctionDefinition, symbol_table: SymbolTableRef) -> ToplevelItem {
@@ -878,7 +888,7 @@ pub fn build_ssa(
                     .clone();
                 toplevels.push(function_ssa(
                     &fd,
-                    symbol_table.borrow().new_with_scope(context),
+                    symbol_table.borrow().new_with_scope(context).borrow().fake_parent(),
                 ));
                 function_decl_count += 1;
             }
