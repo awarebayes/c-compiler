@@ -3,12 +3,6 @@ use std::hash::Hash;
 
 use crate::{asmgen::aarch64::instructions::Register, ir::nodes::{self, Address, Ssa}};
 
-#[derive(Debug)]
-pub struct Lifetime {
-    start: usize,
-    end: usize,
-}
-
 pub fn alive_addresses_in_ssa(ssa: &Ssa) -> Vec<Address> {
     match ssa {
         Ssa::Assignment { dest, source, width: _ } => {
@@ -18,7 +12,7 @@ pub fn alive_addresses_in_ssa(ssa: &Ssa) -> Vec<Address> {
                 vec![dest.clone(), source.clone()]
             }
         },
-        Ssa::Branch { cond, true_target: _, false_target: _ } => {
+        Ssa::Branch { cond, true_target: _, false_target: _ , width: _} => {
             vec![cond.clone()]
         },
         Ssa::Call { dest, func, num_params: _ } => {
@@ -54,6 +48,12 @@ pub fn alive_addresses_in_ssa(ssa: &Ssa) -> Vec<Address> {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct Lifetime {
+    start: usize,
+    end: usize,
+}
+
 pub fn analyze_lifetimes(
     body: &[Ssa]
 ) -> HashMap<Address, Lifetime> {
@@ -70,82 +70,79 @@ pub fn analyze_lifetimes(
     lifetimes
 }
 
+#[derive(Debug, Clone, Copy)]
+pub enum Location {
+    Reg(Register),
+    Spill(i64), // stack offset
+}
 
+pub struct Allocation {
+    pub loc: Location,
+    pub lifetime: Lifetime,
+}
 
 pub struct LinearScanRegisterAlloc {
     available_regs: Vec<Register>,
-    allocations: HashMap<Address, Register>,
-    active: Vec<(Address, Register, usize)>, // (temp, reg, end)
-    spill_slots: HashMap<Address, i64>,
-    next_spill_offset: i64,
-
-    pre_colored: HashMap<Address, Register>,
+    allocations: HashMap<Address, Allocation>,
+    next_spill_slot: i64,
 }
 
 impl LinearScanRegisterAlloc {
-    pub fn new(regs: Vec<Register>) -> Self {
+    pub fn new(available_regs: Vec<Register>) -> Self {
         Self {
-            available_regs: regs,
+            available_regs,
             allocations: HashMap::new(),
-            spill_slots: HashMap::new(),
-            active: vec![],
-            next_spill_offset: 0,
+            next_spill_slot: 0,
         }
     }
 
-    pub fn allocate_for_variable(&mut self,
-        var: Address, 
-        lifetime: &Lifetime,
-        position: usize
-    ) -> (Register, Option<(Address, i64)>) {
-        self.expire_old_lifetimes(position);
-        if let Some(reg) = self.available_regs.pop() {
-            self.allocations.insert(var.clone(), reg);
-            self.active.push((var, reg, lifetime.end));
-            (reg, None)
-        } else {
-            self.spill_one(var, lifetime)
-        }
+    pub fn stack_size(&self) -> usize {
+        self.next_spill_slot.abs() as usize
     }
 
-    fn spill_one(&mut self, new_var: Address, new_lifetime: &Lifetime) -> (Register, Option<(Address, i64)>) {
-        // spill the first active variable
-        if let Some((spill_var, spill_reg, _)) = self.active.pop() {
-            let spill_offset = self.next_spill_offset;
-            self.next_spill_offset += 8;  // 8 bytes per spill slot
-            self.spill_slots.insert(spill_var.clone(), spill_offset);
-            
-            // Use this register for the new variable
-            self.allocations.insert(new_var.clone(), spill_reg);
-            self.active.push((new_var, spill_reg, new_lifetime.end));
-            (spill_reg, Some((spill_var, spill_offset)))
-        } else {
-            panic!("Cant spill!")
-        }
-    }
+    pub fn linear_scan(&mut self, lifetimes: &HashMap<Address, Lifetime>) {
+        // Sort intervals by start time
+        let mut intervals: Vec<_> = lifetimes.iter().collect();
+        intervals.sort_by_key(|(_, lt)| lt.start);
 
-    pub fn expire_old_lifetimes(&mut self, position: usize) {
-        self.active.retain(|(var, reg, end)| {
-            if position > *end {
-                self.available_regs.push(*reg);
-                self.allocations.remove(var);
-                false
+        let mut active: Vec<(Address, Lifetime, Register)> = Vec::new();
+
+        for (addr, lifetime) in intervals {
+            // expire old intervals
+            active.retain(|(_, lt, _)| lt.end >= lifetime.start);
+
+            // try allocate register
+            if let Some(&reg) = self.available_regs
+                .iter()
+                .find(|r| !active.iter().any(|(_, _, ar)| ar == *r))
+            {
+                self.allocations.insert(addr.clone(), Allocation {
+                    loc: Location::Reg(reg),
+                    lifetime: *lifetime,
+                });
+                active.push((addr.clone(), *lifetime, reg));
             } else {
-                true
+                // Spill this variable
+                let spill_off = self.next_spill_slot;
+                self.next_spill_slot += 8; // assuming 8-byte slots
+                self.allocations.insert(addr.clone(), Allocation {
+                    loc: Location::Spill(spill_off),
+                    lifetime: *lifetime,
+                });
             }
-        });
+        }
     }
 
-    pub fn get_register(&self, var: &Address) -> Option<Register> {
-        self.allocations.get(var).copied()
-    }
-    
-    pub fn is_spilled(&self, var: &Address) -> bool {
-        self.spill_slots.contains_key(var)
+
+    pub fn location_of(&self, addr: &Address, instr_index: usize) -> Option<Location> {
+        self.allocations.get(addr).and_then(|a| {
+            if instr_index >= a.lifetime.start && instr_index <= a.lifetime.end {
+                Some(a.loc)
+            } else {
+                None
+            }
+        })
     }
 
-    pub fn get_spill_slot(&self, var: &Address) -> Option<i64> {
-        self.spill_slots.get(var).copied()
-    }
 }
 

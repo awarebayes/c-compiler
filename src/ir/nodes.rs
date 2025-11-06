@@ -140,6 +140,7 @@ pub enum Ssa {
     // Control flow
     Jump(Label),
     Branch {
+        width: Width,
         cond: Address,
         true_target: Label,
         false_target: Label,

@@ -491,6 +491,28 @@ fn generate_phi_if_else(
     res_ssa
 }
 
+fn expr_width(expr: &[nodes::Ssa], last_var: &nodes::Address) -> Width {
+    expr.iter().find_map(|e| {
+        match e {
+            nodes::Ssa::Assignment { dest, source: _, width } => {
+                if dest == last_var {
+                    Some(*width)
+                } else {
+                    None
+                }
+            },
+            nodes::Ssa::Quadriplet(quad) => {
+                if &quad.dest == last_var {
+                    Some(quad.width)
+                } else {
+                    None
+                }
+            },
+            _ => None
+        }
+    }).expect("Cannot determine expr width")
+}
+
 impl SsaBuilder for &ast::IfStatement {
     fn visit(&self, symbol_table: SymbolTableRef, state: &State) -> Vec<nodes::Ssa> {
         let mut out = vec![];
@@ -504,11 +526,14 @@ impl SsaBuilder for &ast::IfStatement {
 
                 let true_label = nodes::Label::compiler_temp(state.label_count());
                 let false_label = nodes::Label::compiler_temp(state.label_count() + 1);
+                let width = expr_width(&expr_ssas,  &nodes::Address::compiler_temp(state.last_var()));
+
                 out.extend(expr_ssas);
                 out.push(nodes::Ssa::Branch {
                     cond: nodes::Address::compiler_temp(state.last_var()),
                     true_target: true_label.clone(),
                     false_target: false_label.clone(),
+                    width
                 });
 
                 state.inc_label_cnt();
@@ -561,11 +586,13 @@ impl SsaBuilder for &ast::IfStatement {
                 state.inc_label_cnt();
                 state.inc_label_cnt();
 
+                let width = expr_width(&expr_ssas,  &nodes::Address::compiler_temp(state.last_var()));
                 out.extend(expr_ssas);
                 out.push(nodes::Ssa::Branch {
                     cond: nodes::Address::compiler_temp(state.last_var()),
                     true_target: true_label.clone(),
                     false_target: false_label.clone(),
+                    width
                 });
                 out.push(nodes::Ssa::Label(true_label.clone()));
 
@@ -653,11 +680,14 @@ impl SsaBuilder for &ast::WhileStatement {
             .expression
             .as_ref()
             .visit(symbol_table.clone(), state);
+        
+        let width = expr_width(&expr_ssas,  &nodes::Address::compiler_temp(state.last_var()));
 
         let loop_branch = nodes::Ssa::Branch {
             cond: nodes::Address::compiler_temp(state.last_var()),
             true_target: start_label.clone(),
             false_target: end_label.clone(),
+            width
         };
 
         let phi_cond_end = out.len();

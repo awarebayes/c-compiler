@@ -1,6 +1,6 @@
 use crate::{common::Width, ir::nodes};
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FunctionArgumentRegister {
     X0,
     X1,
@@ -12,7 +12,7 @@ pub enum FunctionArgumentRegister {
     X7,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CorruptibleRegister {
     X9,
     X10,
@@ -23,7 +23,7 @@ pub enum CorruptibleRegister {
     X15,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CalleeSavedRegister {
     X19,
     X20,
@@ -37,7 +37,7 @@ pub enum CalleeSavedRegister {
     X28,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RegisterKind {
     FunctionArgument(FunctionArgumentRegister), // x0 - x7
     IndirectResult,                             // x8
@@ -84,7 +84,7 @@ impl From<FunctionArgumentRegister> for RegisterKind {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Register {
     pub kind: RegisterKind,
     pub width: Width,

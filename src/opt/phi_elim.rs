@@ -24,6 +24,7 @@ pub fn eliminate_phi_block(
                     cond: _,
                     true_target: _,
                     false_target: _,
+                    width: _,
                 } => {
                     added_end.push(b.clone());
                     need_push = false;

@@ -1,7 +1,10 @@
+use std::collections::HashMap;
+
 use crate::asmgen::aarch64::instructions;
 use crate::asmgen::aarch64::instructions::Instruction;
 use crate::asmgen::aarch64::instructions::Register;
 use crate::asmgen::aarch64::instructions::Symbol;
+use crate::asmgen::regalloc;
 use crate::asmgen::regalloc::LinearScanRegisterAlloc;
 use crate::asmgen::regalloc::analyze_lifetimes;
 use crate::asmgen::lookup_table::{SymbolAddress, SymbolLookup};
@@ -23,6 +26,95 @@ impl nodes::Label {
     }
 }
 
+fn load_if_needed(instructions: &mut Vec<Instruction>, loc: regalloc::Location, spill_load_register: Register) -> Register {
+    match loc {
+        regalloc::Location::Reg(r) => r.align(spill_load_register.width),
+        regalloc::Location::Spill(stack_off) => {
+            instructions.push(Instruction::Load {
+                    width: spill_load_register.width,
+                    dest: spill_load_register,
+                    operand: instructions::AddressingMode::stack_offset(stack_off),
+            });
+            spill_load_register
+        }
+    }
+}
+
+fn empty_register(loc: regalloc::Location, spill_load_register: Register) -> Register {
+    match loc {
+        regalloc::Location::Reg(r) => r.align(spill_load_register.width),
+        regalloc::Location::Spill(_) => {
+            spill_load_register
+        }
+    }
+}
+
+fn store_if_needed(instructions: &mut Vec<Instruction>, loc: regalloc::Location, reg: Register) {
+    match loc {
+        regalloc::Location::Reg(r) => {
+            if reg != r {
+                instructions.push(Instruction::Mov {
+                    dest: r.align(reg.width),
+                    operand: reg.rvalue(),
+                });
+            }
+        },
+        regalloc::Location::Spill(stack_off) => {
+            instructions.push(Instruction::Store {
+                    width: reg.width,
+                    source: reg,
+                    operand: instructions::AddressingMode::stack_offset(stack_off),
+            });
+        }
+    }
+}
+
+fn alloc_stack(instructions: &mut Vec<Instruction>, bytes: usize) {
+    instructions.push(instructions::Instruction::Arith(instructions::Arith {
+        op: instructions::ArithOp::Sub,
+        dest: Register::stack_pointer(),
+        left: Register::stack_pointer(),
+        right: instructions::RValue::Immediate(bytes as i64),
+    }));
+}
+
+fn pop_stack(instructions: &mut Vec<Instruction>, bytes: usize) {
+    instructions.push(instructions::Instruction::Arith(instructions::Arith {
+        op: instructions::ArithOp::Add,
+        dest: Register::stack_pointer(),
+        left: Register::stack_pointer(),
+        right: instructions::RValue::Immediate(bytes as i64),
+    }));
+}
+
+fn alloc_stack_spill(instructions: &mut Vec<Instruction>, reg: Register) {
+    instructions.push(instructions::Instruction::Arith(instructions::Arith {
+        op: instructions::ArithOp::Sub,
+        dest: Register::stack_pointer(),
+        left: Register::stack_pointer(),
+        right: instructions::RValue::Immediate(32), // FIXME MY MAN
+    }));
+    instructions.push(Instruction::Store {
+        width: Width::Long,
+        source: reg.align(Width::Long),
+        operand: instructions::AddressingMode::stack_offset(0),
+    });
+}
+
+fn pop_stack_spill(instructions: &mut Vec<Instruction>, reg: Register) {
+    instructions.push(Instruction::Load {
+        width: Width::Long,
+        dest: reg.align(Width::Long),
+        operand: instructions::AddressingMode::stack_offset(0),
+    });
+    instructions.push(instructions::Instruction::Arith(instructions::Arith {
+        op: instructions::ArithOp::Add,
+        dest: Register::stack_pointer(),
+        left: Register::stack_pointer(),
+        right: instructions::RValue::Immediate(32),
+    }));
+}
+
 fn body_to_asm(
     block: &[nodes::Ssa],
     func_name: &str,
@@ -37,12 +129,22 @@ fn body_to_asm(
         Register::x2(Width::Long),
         Register::x3(Width::Long),
         Register::x4(Width::Long),
-        Register::x5(Width::Long),
-        Register::x6(Width::Long),
-        Register::x7(Width::Long),
     ]);
 
+    allocator.linear_scan(&lifetimes);
+
+    let stack_size = allocator.stack_size();
+
+    let scratch_register_1 = Register::x5(Width::Long);
+    let scratch_register_2 = Register::x6(Width::Long);
+    let scratch_register_3 = Register::x7(Width::Long);
+
+    let mut function_call_stack_spills: Vec<Register> = vec![];
+
     let mut result = vec![];
+
+    alloc_stack(&mut result, stack_size);
+
     for (idx, b) in block.iter().enumerate() {
         match b {
             nodes::Ssa::Assignment {
@@ -52,18 +154,21 @@ fn body_to_asm(
             } => {
                 if let nodes::Address::Constant(nodes::AddressConstant::Numeric(num_const)) = source
                 {
-                    let (dest_register, spill) = allocator.allocate_for_variable(dest.clone(), &lifetimes[&dest], idx);
-                    assert!(spill.is_none());
+                    let dest_loc = allocator.location_of(dest, idx).unwrap();
 
                     result.push(Instruction::Mov {
-                        dest: dest_register,
+                        dest: scratch_register_1.align(*width),
                         operand: instructions::RValue::Immediate(*num_const),
                     });
+
+                    store_if_needed(&mut result, dest_loc, scratch_register_1.align(*width));
                 } else if let nodes::Address::Constant(nodes::AddressConstant::StringLiteral(sl)) =
                     source
                 {
-                    let (dest_register, spill) = allocator.allocate_for_variable(dest.clone(), &lifetimes[&dest], idx);
-                    assert!(spill.is_none());
+
+                    let scratch_register_1 = scratch_register_1.align(*width);
+                    let dest_loc = allocator.location_of(dest, idx).unwrap();
+                    let dest_reg = empty_register(dest_loc, scratch_register_1);
 
                     let sl_label = lookup
                         .get(&nodes::Address::Constant(
@@ -75,69 +180,69 @@ fn body_to_asm(
                         _ => panic!(),
                     };
 
-                    let x0 = Register::x0(*width);
                     result.push(Instruction::AdressPage {
-                        dest: dest_register,
+                        dest: dest_reg,
                         symbol: Symbol(sl_label_str.clone()),
                     });
                     result.push(Instruction::Arith(instructions::Arith {
                         op: instructions::ArithOp::Add,
-                        dest: dest_register,
-                        left: dest_register,
+                        dest: dest_reg,
+                        left: dest_reg,
                         right: instructions::RValue::SymbolOffset(Symbol(sl_label_str.clone())),
                     }));
+                    store_if_needed(&mut result, dest_loc, dest_reg);
 
                 } else {
-                    let (dest_register, spill) = allocator.allocate_for_variable(dest.clone(), &lifetimes[&dest], idx);
-                    assert!(spill.is_none());
-                    let source_register = allocator.get_register(source).unwrap();
+                    let dest_loc = allocator.location_of(dest, idx).unwrap();
+                    let source_loc = allocator.location_of(source, idx).unwrap();
+
+                    let dest_reg = empty_register(dest_loc, scratch_register_1);
+                    let source_reg = load_if_needed(&mut result, source_loc, scratch_register_2);
 
                     result.push(Instruction::Mov {
-                        dest: dest_register,
-                        operand: source_register.rvalue(),
+                        dest: dest_reg,
+                        operand: source_reg.rvalue(),
                     });
+
+                    store_if_needed(&mut result, dest_loc, dest_reg.align(*width));
                 }
             }
             nodes::Ssa::Quadriplet(quad) => {
                 let width = quad.width;
 
-                let left_register = allocator.get_register(&quad.left).unwrap().align(width);
-                let right_register = allocator.get_register(quad.right.as_ref().unwrap()).unwrap().align(width);
+                let scratch_register_1 = scratch_register_1.align(width);
+                let scratch_register_2 = scratch_register_2.align(width);
+                let scratch_register_3 = scratch_register_3.align(width);
 
-                let (result_register, spill) = allocator.allocate_for_variable(quad.dest.clone(), &lifetimes[&quad.dest], idx);
-                let result_register = result_register.align(width);
+                let left_loc = allocator.location_of(&quad.left, idx).unwrap();
+                let right_loc = allocator.location_of(quad.right.as_ref().unwrap(), idx).unwrap();
+                let dest_loc = allocator.location_of(&quad.dest, idx).unwrap();
 
-                assert!(spill.is_none());
-
+                let left_reg = load_if_needed(&mut result, left_loc, scratch_register_1);
+                let right_reg = load_if_needed(&mut result, right_loc, scratch_register_2);
+                let dest_reg = empty_register(dest_loc, scratch_register_3);
 
                 if quad.op.is_cmp() {
                     let cond_op = instructions::ConditionalCode::try_from_nodes_op(quad.op);
                     result.push(Instruction::Cmp {
-                        left: left_register,
-                        right: right_register.rvalue(),
+                        left: left_reg,
+                        right: right_reg.rvalue(),
                     });
                     result.push(Instruction::CondSet {
-                        dest: result_register,
+                        dest: dest_reg,
                         cond: cond_op,
                     });
                 } else {
                     let mod_op = instructions::ArithOp::try_from_nodes_op(quad.op);
                     result.push(Instruction::Arith(instructions::Arith {
                         op: mod_op,
-                        dest: result_register,
-                        left: left_register,
-                        right: right_register.rvalue(),
+                        dest: dest_reg,
+                        left: left_reg,
+                        right: right_reg.rvalue(),
                     }));
                 }
 
-                if allocator.is_spilled(&quad.dest) {
-                    result.push(Instruction::Store {
-                            width,
-                            source: result_register,
-                            operand: instructions::AddressingMode::stack_offset(allocator.get_spill_slot(&quad.dest).unwrap()),
-                    });
-                }
-
+                store_if_needed(&mut result, dest_loc, dest_reg);
             }
             nodes::Ssa::Label(lab) => {
                 result.push(Instruction::Label(lab.to_asm_label(func_name)));
@@ -146,8 +251,11 @@ fn body_to_asm(
                 cond,
                 true_target,
                 false_target,
+                width
             } => {
-                let cond_register = allocator.get_register(cond).unwrap();
+                let scratch_register_1 = scratch_register_1.align(*width);
+                let cond_loc = allocator.location_of(&cond, idx).unwrap();
+                let cond_register = load_if_needed(&mut result, cond_loc, scratch_register_1);
 
                 result.push(Instruction::Cmp {
                     left: cond_register,
@@ -164,10 +272,12 @@ fn body_to_asm(
             }
             nodes::Ssa::Return { value } => {
                 if let Some((val, width)) = value {
-                    let val_register = allocator.get_register(val).unwrap().align(*width);
+                    let scratch_register_1 = scratch_register_1.align(*width);
+                    let val_loc = allocator.location_of(&val, idx).unwrap();
+                    let val_register = load_if_needed(&mut result, val_loc, scratch_register_1);
 
                     result.push(Instruction::Mov {
-                        dest: Register::x0(*width),
+                        dest: Register::x0(*width), // dont care about contents at this point
                         operand: val_register.rvalue(),
                     });
                     result.push(Instruction::Branch(instructions::Branch::uncond(
@@ -190,17 +300,28 @@ fn body_to_asm(
                 value,
                 width,
             } => {
-                let reg = match *number {
+                let arg_reg = match *number {
                     0 => Register::x0(*width),
                     1 => Register::x1(*width),
                     2 => Register::x2(*width),
                     _ => todo!(),
                 };
-                result.push(Instruction::Load {
-                    width: *width,
-                    dest: reg,
-                    operand: instructions::AddressingMode::stack_offset(var.address.offset()),
-                });
+
+                let scratch_register_1 = scratch_register_1.align(*width);
+                let param_loc = allocator.location_of(value, idx).unwrap();
+                let param_reg = load_if_needed(&mut result, param_loc, scratch_register_1);
+
+                // Maybe check if arg_reg is empty here?
+                if arg_reg != param_reg {
+                    // Something was in arg_reg, store this something to stack
+                    function_call_stack_spills.push(arg_reg.align(Width::Long));
+                    alloc_stack_spill(&mut result, arg_reg.align(Width::Long));
+
+                    result.push(Instruction::Mov {
+                        dest: arg_reg,
+                        operand: param_reg.rvalue(),
+                    });
+                }
             }
             nodes::Ssa::Call {
                 dest,
@@ -209,17 +330,13 @@ fn body_to_asm(
             } => {
                 match func {
                     nodes::Address::CompilerTemp(_) => {
-                        let x0 = Register::x0(Width::Long);
-                        let symb = lookup.get(func).unwrap();
-                        result.push(Instruction::Load {
-                            width: Width::Long,
-                            dest: x0,
-                            operand: instructions::AddressingMode::stack_offset(
-                                symb.address.offset(),
-                            ),
-                        });
+                        let scratch_register_1 = scratch_register_1.align(Width::Long);
+
+                        let func_loc = allocator.location_of(func, idx).unwrap();
+                        let func_reg = load_if_needed(&mut result, func_loc, scratch_register_1);
+
                         result.push(Instruction::Branch(
-                            instructions::Branch::branch_link_register(x0),
+                            instructions::Branch::branch_link_register(func_reg),
                         ));
                     }
                     nodes::Address::Source(source) => {
@@ -232,22 +349,37 @@ fn body_to_asm(
                     }
                 }
                 if let Some((val, width)) = dest {
-                    let x0 = Register::x0(*width);
-                    let val_info = lookup.get(&val).unwrap();
-                    result.push(Instruction::Store {
-                        width: *width,
-                        source: x0,
-                        operand: instructions::AddressingMode::stack_offset(
-                            val_info.address.offset(),
-                        ),
+                    let scratch_register_1 = scratch_register_1.align(*width);
+
+                    result.push(Instruction::Mov{
+                        dest: scratch_register_1,
+                        operand: Register::x0(*width).rvalue()
                     });
+
+                    let val_loc = allocator.location_of(val, idx).unwrap();
+
+                    store_if_needed(&mut result, val_loc, scratch_register_1);
                 }
+
+                for spilled_reg in function_call_stack_spills.iter().rev() {
+                    pop_stack_spill(&mut result, *spilled_reg);
+                }
+
+                function_call_stack_spills.clear();
             }
 
             nodes::Ssa::Phi(_) => panic!("Phi functions should be eliminated at this stage!"),
             _ => todo!(),
         }
     }
+
+    result.push(instructions::Instruction::Label(format!(
+        "return_{}",
+        func_name
+    )));
+
+    pop_stack(&mut result, stack_size);
+
     result
 }
 
@@ -256,11 +388,7 @@ pub fn convert_function_body_ir_to_asm(
     func_name: &str,
     global_lookup: &SymbolLookup,
 ) -> Vec<instructions::Instruction> {
-    let lookup = SymbolLookup::from_fn_body(ir);
-
-    let stack_size = lookup.stack_size();
-
-    let lookup = lookup.extend_with_global(global_lookup.clone());
+    let lookup = global_lookup;
 
     let mut instructions = vec![];
 
@@ -274,26 +402,9 @@ pub fn convert_function_body_ir_to_asm(
         operand: instructions::RValue::Register(Register::stack_pointer()),
     });
 
-    instructions.push(instructions::Instruction::Arith(instructions::Arith {
-        op: instructions::ArithOp::Sub,
-        dest: Register::stack_pointer(),
-        left: Register::stack_pointer(),
-        right: instructions::RValue::Immediate(stack_size as i64),
-    }));
-
-    let asm = body_to_asm(ir, func_name);
+    let asm = body_to_asm(ir, func_name, lookup);
     instructions.extend(asm);
 
-    instructions.push(instructions::Instruction::Label(format!(
-        "return_{}",
-        func_name
-    )));
-    instructions.push(instructions::Instruction::Arith(instructions::Arith {
-        op: instructions::ArithOp::Add,
-        dest: Register::stack_pointer(),
-        left: Register::stack_pointer(),
-        right: instructions::RValue::Immediate(stack_size as i64),
-    }));
     instructions.push(instructions::Instruction::LoadPair {
         r1: Register::frame_pointer(),
         r2: Register::link_register(),

@@ -5,61 +5,64 @@
 _main:
 stp x29, x30, [sp, -16]!
 mov x29, sp
-sub sp, sp, 64
+sub sp, sp, 0
 start_function_main:
-mov w0, 5
-str w0, [sp, 0]
-ldr w0, [sp, 0]
-str w0, [sp, 4]
-ldr w0, [sp, 4]
-str w0, [sp, 8]
-ldr w0, [sp, 4]
-str w0, [sp, 12]
+mov w5, 5
+mov w0, w5
+mov x1, x0
+mov w1, w1
+mov x0, x1
+mov w0, w0
+mov x2, x1
+mov w2, w2
 L_main_0:
-ldr w0, [sp, 8]
-str w0, [sp, 16]
-mov w0, 0
-str w0, [sp, 20]
-ldr w0, [sp, 16]
-ldr w1, [sp, 20]
-cmp w0, w1
-cset w0, gt
-str w0, [sp, 24]
-ldr w0, [sp, 24]
-cmp w0, 1
+mov x1, x0
+mov w1, w1
+mov w5, 0
+mov w3, w5
+cmp w1, w3
+cset w4, gt
+mov w4, w4
+cmp w4, 1
 beq L_main_1
 bne L_main_2
 L_main_1:
-mov w0, 1
-str w0, [sp, 28]
-ldr w0, [sp, 8]
-ldr w1, [sp, 28]
-sub w0, w0, w1
-str w0, [sp, 32]
-ldr w0, [sp, 32]
-str w0, [sp, 36]
-adrp x0, sl0@PAGE
-add x0, x0, sl0@PAGEOFF
-str x0, [sp, 40]
-ldr w0, [sp, 36]
-str w0, [sp, 48]
-ldr x0, [sp, 40]
-ldr w1, [sp, 48]
+mov w5, 1
+mov w1, w5
+sub w3, w0, w1
+mov w3, w3
+mov x1, x3
+mov w1, w1
+adrp x3, sl0@PAGE
+add x3, x3, sl0@PAGEOFF
+mov x4, x1
+mov w4, w4
+sub sp, sp, 32
+str x0, [sp, 0]
+mov x0, x3
+sub sp, sp, 32
+str x1, [sp, 0]
+mov w1, w4
 bl _printf
-str w0, [sp, 52]
-ldr w0, [sp, 36]
-str w0, [sp, 8]
-ldr w0, [sp, 36]
-str w0, [sp, 12]
+mov w5, w0
+mov w3, w5
+ldr x1, [sp, 0]
+add sp, sp, 32
+ldr x0, [sp, 0]
+add sp, sp, 32
+mov x0, x1
+mov w0, w0
+mov x2, x1
+mov w2, w2
 b L_main_0
 L_main_2:
-mov w0, 0
-str w0, [sp, 56]
-ldr w0, [sp, 56]
+mov w5, 0
+mov w0, w5
+mov w0, w0
 b return_main
 b return_main
 return_main:
-add sp, sp, 64
+add sp, sp, 0
 ldp x29, x30, [sp], 16
 ret
 .section __TEXT,__cstring

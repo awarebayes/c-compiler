@@ -140,9 +140,11 @@ impl IrTextRepr for nodes::Ssa {
                 cond,
                 true_target,
                 false_target,
+                width
             } => {
                 format!(
-                    "\tbranch {}: {} {}",
+                    "\tbranch{} {}: {} {}",
+                    width.to_ir_string(),
                     cond.to_ir_string(),
                     true_target.to_ir_string(),
                     false_target.to_ir_string()

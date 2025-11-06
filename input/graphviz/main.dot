@@ -2,7 +2,7 @@ digraph SSA {
 rankdir=TB;
 node [shape=rectangle, fontname="Courier"];
 start_function_main [label=<start_function_main<BR ALIGN="LEFT"/>    	%_t0 =w #5<BR ALIGN="LEFT"/>    	%a.0 =w %_t0<BR ALIGN="LEFT"/>    >];
-_l0 [label=<_l0<BR ALIGN="LEFT"/>    	%a.1 =w phi [%a.0, @start_function_main], [%a.2, @_l1]<BR ALIGN="LEFT"/>    	%_t1 =w %a.1<BR ALIGN="LEFT"/>    	%_t2 =w #0<BR ALIGN="LEFT"/>    	%_t3 =w %_t1 &gt; %_t2<BR ALIGN="LEFT"/>    	branch %_t3: _l1 _l2<BR ALIGN="LEFT"/>    >];
+_l0 [label=<_l0<BR ALIGN="LEFT"/>    	%a.1 =w phi [%a.0, @start_function_main], [%a.2, @_l1]<BR ALIGN="LEFT"/>    	%_t1 =w %a.1<BR ALIGN="LEFT"/>    	%_t2 =w #0<BR ALIGN="LEFT"/>    	%_t3 =w %_t1 &gt; %_t2<BR ALIGN="LEFT"/>    	branchw %_t3: _l1 _l2<BR ALIGN="LEFT"/>    >];
 _l1 [label=<_l1<BR ALIGN="LEFT"/>    	%_t4 =w #1<BR ALIGN="LEFT"/>    	%_t5 =w %a.1 - %_t4<BR ALIGN="LEFT"/>    	%a.2 =w %_t5<BR ALIGN="LEFT"/>    	%_t6 =l s&#x27;Hello world %d\n&#x27;<BR ALIGN="LEFT"/>    	%_t7 =w %a.2<BR ALIGN="LEFT"/>    	param0 l %_t6<BR ALIGN="LEFT"/>    	param1 w %_t7<BR ALIGN="LEFT"/>    	%_t8 =w call %printf.0<BR ALIGN="LEFT"/>    	jump _l0<BR ALIGN="LEFT"/>    >];
 _l2 [label=<_l2<BR ALIGN="LEFT"/>    	%a.3 =w phi [%a.0, @start_function_main], [%a.2, @_l1]<BR ALIGN="LEFT"/>    	%_t9 =w #0<BR ALIGN="LEFT"/>    	return w %_t9<BR ALIGN="LEFT"/>    >];
 _l0 -> _l1[label="true"];

@@ -55,6 +55,7 @@ pub fn graphviz_function(declaration: &nodes::FunctionDef) -> String {
                     cond: _,
                     true_target,
                     false_target,
+                    width: _,
                 } => {
                     res.push_str(&format!(
                         "{} -> {}[label=\"true\"];\n",
