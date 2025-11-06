@@ -310,6 +310,8 @@ pub enum Directive {
 }
 
 pub enum Instruction {
+    Comment(String),
+
     Directive(Directive),
 
     Label(String),
@@ -543,6 +545,7 @@ impl Instruction {
                 format!("adrp {}, {}@PAGE", dest.to_string(), symbol.0)
             }
             Self::Directive(dir) => dir.to_string(),
+            Self::Comment(c) => format!("// {}", c),
             _ => todo!(),
         }
     }

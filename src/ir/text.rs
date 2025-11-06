@@ -81,6 +81,24 @@ impl IrTextRepr for nodes::Quadriplet {
     }
 }
 
+impl IrTextRepr for nodes::FunctionParameter {
+    fn to_ir_string(&self) -> String {
+        format!(
+            "{}param{} {} {}",
+            {
+                if self.is_variadic {
+                    "v"
+                } else {
+                    ""
+                }
+            },
+            self.number,
+            self.width.to_ir_string(),
+            self.value.to_ir_string()
+        )
+    }
+}
+
 impl IrTextRepr for nodes::Ssa {
     fn to_ir_string(&self) -> String {
         match self {
@@ -104,35 +122,28 @@ impl IrTextRepr for nodes::Ssa {
                     source.to_ir_string()
                 )
             }
-            nodes::Ssa::Param {
-                value,
-                width,
-                number,
-            } => {
-                format!(
-                    "\tparam{} {} {}",
-                    number,
-                    width.to_ir_string(),
-                    value.to_ir_string()
-                )
-            }
             nodes::Ssa::Call {
                 dest,
                 func,
                 num_params: _,
-            } => match dest {
+                parameters
+            } => {
+                let params_str = parameters.iter().map(|p| p.to_ir_string()).collect::<Vec<_>>().join(", ");
+                match dest {
                 Some((addr, width)) => {
                     format!(
-                        "\t{} ={} call {}",
+                        "\t{} ={} call {} with ({})",
                         addr.to_ir_string(),
                         width.to_ir_string(),
-                        func.to_ir_string()
+                        func.to_ir_string(),
+                        params_str
                     )
                 }
                 None => {
-                    format!("\tcall {}", func.to_ir_string())
+                    format!("\tcall {} with ({})", func.to_ir_string(), params_str)
                 }
-            },
+            }
+        },
             nodes::Ssa::Label(label) => {
                 format!("@{}:", label.to_ir_string())
             }

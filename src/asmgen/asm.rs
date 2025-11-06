@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use crate::asmgen::aarch64::instructions;
 use crate::asmgen::aarch64::instructions::Instruction;
 use crate::asmgen::aarch64::instructions::Register;
@@ -10,7 +8,7 @@ use crate::asmgen::regalloc::analyze_lifetimes;
 use crate::asmgen::lookup_table::{SymbolAddress, SymbolLookup};
 use crate::common::StorageClass;
 use crate::common::Width;
-use crate::ir::ir_to_basic_blocks;
+use crate::ir::IrTextRepr;
 use crate::ir::nodes;
 
 // fn address_to_asm_str(adress: &nodes::Address, lookup: &SymbolLookup) -> String {
@@ -52,7 +50,7 @@ fn empty_register(loc: regalloc::Location, spill_load_register: Register) -> Reg
 fn store_if_needed(instructions: &mut Vec<Instruction>, loc: regalloc::Location, reg: Register) {
     match loc {
         regalloc::Location::Reg(r) => {
-            if reg != r {
+            if reg != r.align(reg.width) {
                 instructions.push(Instruction::Mov {
                     dest: r.align(reg.width),
                     operand: reg.rvalue(),
@@ -74,7 +72,7 @@ fn alloc_stack(instructions: &mut Vec<Instruction>, bytes: usize) {
         op: instructions::ArithOp::Sub,
         dest: Register::stack_pointer(),
         left: Register::stack_pointer(),
-        right: instructions::RValue::Immediate(bytes as i64),
+        right: instructions::RValue::Immediate(bytes.next_multiple_of(16) as i64),
     }));
 }
 
@@ -83,7 +81,7 @@ fn pop_stack(instructions: &mut Vec<Instruction>, bytes: usize) {
         op: instructions::ArithOp::Add,
         dest: Register::stack_pointer(),
         left: Register::stack_pointer(),
-        right: instructions::RValue::Immediate(bytes as i64),
+        right: instructions::RValue::Immediate(bytes.next_multiple_of(16) as i64),
     }));
 }
 
@@ -115,6 +113,60 @@ fn pop_stack_spill(instructions: &mut Vec<Instruction>, reg: Register) {
     }));
 }
 
+fn handle_param(instructions: &mut Vec<Instruction>, allocator: &LinearScanRegisterAlloc, param: &nodes::FunctionParameter, idx: usize, scratch_register_1: Register) -> Option<Register> {
+    assert!(!param.is_variadic);
+    let mut spill = None;
+    let width = param.width;
+    let arg_reg = match param.number {
+        0 => Register::x0(width),
+        1 => Register::x1(width),
+        2 => Register::x2(width),
+        _ => todo!(),
+    };
+
+    let scratch_register_1 = scratch_register_1.align(width);
+    let param_loc = allocator.location_of(&param.value, idx).unwrap();
+    let param_reg = load_if_needed(instructions, param_loc, scratch_register_1);
+
+    // Maybe check if arg_reg is empty here?
+    if arg_reg != param_reg {
+        // Something was in arg_reg, store this something to stack
+        spill = Some(arg_reg.align(Width::Long));
+        alloc_stack_spill(instructions, arg_reg.align(Width::Long));
+
+        instructions.push(Instruction::Mov {
+            dest: arg_reg,
+            operand: param_reg.rvalue(),
+        });
+    }
+
+    return spill;
+}
+
+
+fn handle_variadic_params(instructions: &mut Vec<Instruction>, allocator: &LinearScanRegisterAlloc, idx: usize, params: &[&nodes::FunctionParameter], scratch_register_1: Register) -> usize {
+    const APPLE_VARARG_SLOT_SIZE: usize = 8;
+    let allocated = (APPLE_VARARG_SLOT_SIZE * params.len()).next_multiple_of(16);
+
+    alloc_stack(instructions, allocated);
+
+    for (param_idx, param) in params.iter().enumerate() {
+        let param_loc =  allocator.location_of(&param.value, idx).unwrap();
+        let width = param.width;
+        let scratch_register_1 = scratch_register_1.align(width);
+        let param_reg = load_if_needed(instructions, param_loc, scratch_register_1);
+
+        instructions.push(Instruction::Store {
+            width: width,
+            source: param_reg.align(width),
+            operand: instructions::AddressingMode::stack_offset(8 * param_idx as i64)
+        });
+
+    }
+
+    allocated
+}
+
 fn body_to_asm(
     block: &[nodes::Ssa],
     func_name: &str,
@@ -139,13 +191,13 @@ fn body_to_asm(
     let scratch_register_2 = Register::x6(Width::Long);
     let scratch_register_3 = Register::x7(Width::Long);
 
-    let mut function_call_stack_spills: Vec<Register> = vec![];
 
     let mut result = vec![];
 
     alloc_stack(&mut result, stack_size);
 
     for (idx, b) in block.iter().enumerate() {
+        result.push( Instruction::Comment( b.to_ir_string() ) );
         match b {
             nodes::Ssa::Assignment {
                 dest,
@@ -193,6 +245,8 @@ fn body_to_asm(
                     store_if_needed(&mut result, dest_loc, dest_reg);
 
                 } else {
+                    let scratch_register_1 = scratch_register_1.align(*width);
+                    let scratch_register_2 = scratch_register_2.align(*width);
                     let dest_loc = allocator.location_of(dest, idx).unwrap();
                     let source_loc = allocator.location_of(source, idx).unwrap();
 
@@ -295,39 +349,31 @@ fn body_to_asm(
                     func_name,
                 ))));
             }
-            nodes::Ssa::Param {
-                number,
-                value,
-                width,
-            } => {
-                let arg_reg = match *number {
-                    0 => Register::x0(*width),
-                    1 => Register::x1(*width),
-                    2 => Register::x2(*width),
-                    _ => todo!(),
-                };
 
-                let scratch_register_1 = scratch_register_1.align(*width);
-                let param_loc = allocator.location_of(value, idx).unwrap();
-                let param_reg = load_if_needed(&mut result, param_loc, scratch_register_1);
-
-                // Maybe check if arg_reg is empty here?
-                if arg_reg != param_reg {
-                    // Something was in arg_reg, store this something to stack
-                    function_call_stack_spills.push(arg_reg.align(Width::Long));
-                    alloc_stack_spill(&mut result, arg_reg.align(Width::Long));
-
-                    result.push(Instruction::Mov {
-                        dest: arg_reg,
-                        operand: param_reg.rvalue(),
-                    });
-                }
-            }
             nodes::Ssa::Call {
                 dest,
                 func,
                 num_params: _,
+                parameters
             } => {
+
+                let mut call_stack_spills: Vec<Register> = vec![];
+
+                let non_variadic_parameters = parameters.iter().filter(|x| !x.is_variadic).collect::<Vec<_>>();
+                let variadic_parameters = parameters.iter().filter(|x| x.is_variadic).collect::<Vec<_>>();
+
+                for p in non_variadic_parameters.iter() {
+                    if let Some(spill) = handle_param(&mut result, &allocator, p, idx, scratch_register_1) {
+                        call_stack_spills.push(spill);
+                    }
+                }
+
+                let allocated_variadic = if !variadic_parameters.is_empty() {
+                    handle_variadic_params(&mut result, &allocator, idx, &variadic_parameters, scratch_register_1)
+                } else {
+                    0
+                };
+
                 match func {
                     nodes::Address::CompilerTemp(_) => {
                         let scratch_register_1 = scratch_register_1.align(Width::Long);
@@ -348,6 +394,11 @@ fn body_to_asm(
                         panic!("Cannot call a constant! Unless maybe blr?");
                     }
                 }
+
+                if allocated_variadic > 0 {
+                    pop_stack(&mut result, allocated_variadic);
+                }
+
                 if let Some((val, width)) = dest {
                     let scratch_register_1 = scratch_register_1.align(*width);
 
@@ -361,11 +412,10 @@ fn body_to_asm(
                     store_if_needed(&mut result, val_loc, scratch_register_1);
                 }
 
-                for spilled_reg in function_call_stack_spills.iter().rev() {
+                for spilled_reg in call_stack_spills.iter().rev() {
                     pop_stack_spill(&mut result, *spilled_reg);
                 }
 
-                function_call_stack_spills.clear();
             }
 
             nodes::Ssa::Phi(_) => panic!("Phi functions should be eliminated at this stage!"),

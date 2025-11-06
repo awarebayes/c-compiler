@@ -15,7 +15,7 @@ pub fn alive_addresses_in_ssa(ssa: &Ssa) -> Vec<Address> {
         Ssa::Branch { cond, true_target: _, false_target: _ , width: _} => {
             vec![cond.clone()]
         },
-        Ssa::Call { dest, func, num_params: _ } => {
+        Ssa::Call { dest, func, num_params: _, parameters } => {
             let mut res = vec![];
             if let Some(d) = dest {
                 res.push(d.0.clone());
@@ -23,12 +23,14 @@ pub fn alive_addresses_in_ssa(ssa: &Ssa) -> Vec<Address> {
             if matches!(func, Address::CompilerTemp(_)) {
                 res.push(func.clone());
             }
+            for p in parameters {
+                res.push(p.value.clone());
+            }
             res
         },
         Ssa::Jump(_) => vec![],
         Ssa::Label(_) => vec![],
         Ssa::Phi(_) => panic!("Phis should be eliminated at this point..."),
-        Ssa::Param { number: _, value, width: _ } => vec![value.clone()],
         Ssa::Quadriplet(q) => {
             let mut res = vec![];
             res.push(q.dest.clone());

@@ -331,7 +331,7 @@ impl SsaBuilder for &ast::Expression {
                     let arg_ssa = arg.visit(symbol_table.clone(), state);
                     let arg_temp = state.last_var();
                     nodes.extend(arg_ssa);
-                    args_temps.push((arg_temp, end_width.expect("Unable to determine var width")))
+                    args_temps.push((arg_temp, end_width.expect("Unable to determine var width"), parameters.get(arg_idx).is_none()))
                 }
 
                 let function_adress = match ce.function.as_ref() {
@@ -346,11 +346,14 @@ impl SsaBuilder for &ast::Expression {
                     }
                 };
 
-                for (counter, &(index, width)) in args_temps.iter().enumerate() {
-                    nodes.push(nodes::Ssa::Param {
+                let mut params = vec![];
+
+                for (counter, &(index, width, is_variadic)) in args_temps.iter().enumerate() {
+                    params.push(nodes::FunctionParameter {
                         value: nodes::Address::CompilerTemp(index),
                         width: width,
                         number: counter,
+                        is_variadic
                     });
                 }
 
@@ -363,6 +366,7 @@ impl SsaBuilder for &ast::Expression {
                     )),
                     func: function_adress,
                     num_params: ce.arguments.len(),
+                    parameters: params
                 });
                 state.inc_var_cnt();
             }

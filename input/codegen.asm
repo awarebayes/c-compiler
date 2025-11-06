@@ -6,58 +6,29 @@ _main:
 stp x29, x30, [sp, -16]!
 mov x29, sp
 sub sp, sp, 0
+// @start_function_main:
 start_function_main:
+// 	%_t0 =w #5
 mov w5, 5
 mov w0, w5
-mov x1, x0
-mov w1, w1
-mov x0, x1
-mov w0, w0
-mov x2, x1
-mov w2, w2
-L_main_0:
-mov x1, x0
-mov w1, w1
-mov w5, 0
-mov w3, w5
-cmp w1, w3
-cset w4, gt
-mov w4, w4
-cmp w4, 1
-beq L_main_1
-bne L_main_2
-L_main_1:
-mov w5, 1
-mov w1, w5
-sub w3, w0, w1
-mov w3, w3
-mov x1, x3
-mov w1, w1
-adrp x3, sl0@PAGE
-add x3, x3, sl0@PAGEOFF
-mov x4, x1
-mov w4, w4
-sub sp, sp, 32
-str x0, [sp, 0]
-mov x0, x3
-sub sp, sp, 32
-str x1, [sp, 0]
-mov w1, w4
+// 	%a.0 =w %_t0
+mov w1, w0
+// 	%_t1 =l s'A is %d\n'
+adrp x0, sl0@PAGE
+add x0, x0, sl0@PAGEOFF
+// 	%_t2 =w %a.0
+mov w2, w1
+// 	%_t3 =w call %printf.0 with (param0 l %_t1, vparam1 w %_t2)
+sub sp, sp, 16
+str w2, [sp, 0]
 bl _printf
+add sp, sp, 16
 mov w5, w0
-mov w3, w5
-ldr x1, [sp, 0]
-add sp, sp, 32
-ldr x0, [sp, 0]
-add sp, sp, 32
-mov x0, x1
-mov w0, w0
-mov x2, x1
-mov w2, w2
-b L_main_0
-L_main_2:
+mov w1, w5
+// 	%_t4 =w #0
 mov w5, 0
 mov w0, w5
+// 	return w %_t4
 mov w0, w0
 b return_main
 b return_main
@@ -67,4 +38,4 @@ ldp x29, x30, [sp], 16
 ret
 .section __TEXT,__cstring
 sl0:
-.asciz "Hello world %d\n"
+.asciz "A is %d\n"

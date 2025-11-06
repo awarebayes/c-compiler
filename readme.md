@@ -10,7 +10,7 @@ C Compiler written in rust targeting aarch64 + Mach-O.
 - [ ] IR Optimization
 - [x] Phi Elimination
 - [x] Assembly codegen
-- [ ] Register Allocation
+- [x] Register Allocation (Linear Scan)
 
 C Language status 
 - [x] Init statement
@@ -25,16 +25,17 @@ C Language status
 source
 
 ```c
+extern int printf(const char * format, ...);
 extern int puts(char *str);
 
 int other_func() {
-   int a = 5;
-   while (a > 0)
+   int times = 5;
+   while (times > 0)
    {
-      puts("a");
-      a -= 1;
+      printf("times is %d\n", times);
+      times -= 1;
    }
-   return a;
+   return times;
 }
 
 int main() {

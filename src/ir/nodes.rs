@@ -103,6 +103,14 @@ pub struct PhiFunction {
 }
 
 #[derive(Debug, Clone)]
+pub struct FunctionParameter {
+    pub number: usize,
+    pub value: Address,
+    pub width: Width,
+    pub is_variadic: bool
+}
+
+#[derive(Debug, Clone)]
 pub enum Ssa {
     // Quadriplet
     Quadriplet(Quadriplet),
@@ -115,15 +123,10 @@ pub enum Ssa {
 
     Phi(PhiFunction),
 
-    // Function parameters: param value
-    Param {
-        number: usize,
-        value: Address,
-        width: Width,
-    },
 
     // Function calls: dest = call func_name, num_params
     Call {
+        parameters: Vec<FunctionParameter>,
         dest: Option<(Address, Width)>,
         func: Address,
         num_params: usize,
