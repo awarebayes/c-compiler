@@ -24,14 +24,14 @@ impl nodes::Label {
     }
 }
 
-fn load_if_needed(instructions: &mut Vec<Instruction>, loc: regalloc::Location, spill_load_register: Register) -> Register {
+fn load_if_needed(instructions: &mut Vec<Instruction>, loc: regalloc::Location, spill_load_register: Register, dynamic_offset: i64) -> Register {
     match loc {
         regalloc::Location::Reg(r) => r.align(spill_load_register.width),
         regalloc::Location::Spill(stack_off) => {
             instructions.push(Instruction::Load {
                     width: spill_load_register.width,
                     dest: spill_load_register,
-                    operand: instructions::AddressingMode::stack_offset(stack_off),
+                    operand: instructions::AddressingMode::stack_offset(stack_off + dynamic_offset),
             });
             spill_load_register
         }
@@ -113,7 +113,8 @@ fn pop_stack_spill(instructions: &mut Vec<Instruction>, reg: Register) {
     }));
 }
 
-fn handle_param(instructions: &mut Vec<Instruction>, allocator: &LinearScanRegisterAlloc, param: &nodes::FunctionParameter, idx: usize, scratch_register_1: Register) -> Option<Register> {
+fn handle_param(instructions: &mut Vec<Instruction>, allocator: &LinearScanRegisterAlloc, param: &nodes::FunctionParameter, idx: usize, scratch_register_1: Register, dynamic_offset: i64) -> Option<Register> {
+    instructions.push(Instruction::Comment(param.to_ir_string()));
     assert!(!param.is_variadic);
     let mut spill = None;
     let width = param.width;
@@ -126,12 +127,14 @@ fn handle_param(instructions: &mut Vec<Instruction>, allocator: &LinearScanRegis
 
     let scratch_register_1 = scratch_register_1.align(width);
     let param_loc = allocator.location_of(&param.value, idx).unwrap();
-    let param_reg = load_if_needed(instructions, param_loc, scratch_register_1);
+    let param_reg = load_if_needed(instructions, param_loc, scratch_register_1, dynamic_offset);
 
     // Maybe check if arg_reg is empty here?
     if arg_reg != param_reg {
-        // Something was in arg_reg, store this something to stack
+        instructions.push(Instruction::Comment("Register is occupied, spilling!".to_string()));
+
         spill = Some(arg_reg.align(Width::Long));
+        
         alloc_stack_spill(instructions, arg_reg.align(Width::Long));
 
         instructions.push(Instruction::Mov {
@@ -144,24 +147,24 @@ fn handle_param(instructions: &mut Vec<Instruction>, allocator: &LinearScanRegis
 }
 
 
-fn handle_variadic_params(instructions: &mut Vec<Instruction>, allocator: &LinearScanRegisterAlloc, idx: usize, params: &[&nodes::FunctionParameter], scratch_register_1: Register) -> usize {
+fn handle_variadic_params(instructions: &mut Vec<Instruction>, allocator: &LinearScanRegisterAlloc, idx: usize, params: &[&nodes::FunctionParameter], scratch_register_1: Register, dynamic_offset: i64) -> usize {
     const APPLE_VARARG_SLOT_SIZE: usize = 8;
     let allocated = (APPLE_VARARG_SLOT_SIZE * params.len()).next_multiple_of(16);
 
     alloc_stack(instructions, allocated);
 
     for (param_idx, param) in params.iter().enumerate() {
+        instructions.push(Instruction::Comment(param.to_ir_string()));
         let param_loc =  allocator.location_of(&param.value, idx).unwrap();
         let width = param.width;
         let scratch_register_1 = scratch_register_1.align(width);
-        let param_reg = load_if_needed(instructions, param_loc, scratch_register_1);
+        let param_reg = load_if_needed(instructions, param_loc, scratch_register_1, dynamic_offset + allocated as i64);
 
         instructions.push(Instruction::Store {
             width: width,
             source: param_reg.align(width),
             operand: instructions::AddressingMode::stack_offset(8 * param_idx as i64)
         });
-
     }
 
     allocated
@@ -251,7 +254,7 @@ fn body_to_asm(
                     let source_loc = allocator.location_of(source, idx).unwrap();
 
                     let dest_reg = empty_register(dest_loc, scratch_register_1);
-                    let source_reg = load_if_needed(&mut result, source_loc, scratch_register_2);
+                    let source_reg = load_if_needed(&mut result, source_loc, scratch_register_2, 0);
 
                     result.push(Instruction::Mov {
                         dest: dest_reg,
@@ -272,8 +275,8 @@ fn body_to_asm(
                 let right_loc = allocator.location_of(quad.right.as_ref().unwrap(), idx).unwrap();
                 let dest_loc = allocator.location_of(&quad.dest, idx).unwrap();
 
-                let left_reg = load_if_needed(&mut result, left_loc, scratch_register_1);
-                let right_reg = load_if_needed(&mut result, right_loc, scratch_register_2);
+                let left_reg = load_if_needed(&mut result, left_loc, scratch_register_1, 0);
+                let right_reg = load_if_needed(&mut result, right_loc, scratch_register_2, 0);
                 let dest_reg = empty_register(dest_loc, scratch_register_3);
 
                 if quad.op.is_cmp() {
@@ -309,7 +312,7 @@ fn body_to_asm(
             } => {
                 let scratch_register_1 = scratch_register_1.align(*width);
                 let cond_loc = allocator.location_of(&cond, idx).unwrap();
-                let cond_register = load_if_needed(&mut result, cond_loc, scratch_register_1);
+                let cond_register = load_if_needed(&mut result, cond_loc, scratch_register_1, 0);
 
                 result.push(Instruction::Cmp {
                     left: cond_register,
@@ -328,7 +331,7 @@ fn body_to_asm(
                 if let Some((val, width)) = value {
                     let scratch_register_1 = scratch_register_1.align(*width);
                     let val_loc = allocator.location_of(&val, idx).unwrap();
-                    let val_register = load_if_needed(&mut result, val_loc, scratch_register_1);
+                    let val_register = load_if_needed(&mut result, val_loc, scratch_register_1, 0);
 
                     result.push(Instruction::Mov {
                         dest: Register::x0(*width), // dont care about contents at this point
@@ -362,14 +365,17 @@ fn body_to_asm(
                 let non_variadic_parameters = parameters.iter().filter(|x| !x.is_variadic).collect::<Vec<_>>();
                 let variadic_parameters = parameters.iter().filter(|x| x.is_variadic).collect::<Vec<_>>();
 
+                let mut dynamic_stack_offset = 0;
+
                 for p in non_variadic_parameters.iter() {
-                    if let Some(spill) = handle_param(&mut result, &allocator, p, idx, scratch_register_1) {
+                    if let Some(spill) = handle_param(&mut result, &allocator, p, idx, scratch_register_1, dynamic_stack_offset) {
                         call_stack_spills.push(spill);
+                        dynamic_stack_offset += 32;
                     }
                 }
 
                 let allocated_variadic = if !variadic_parameters.is_empty() {
-                    handle_variadic_params(&mut result, &allocator, idx, &variadic_parameters, scratch_register_1)
+                    handle_variadic_params(&mut result, &allocator, idx, &variadic_parameters, scratch_register_1, dynamic_stack_offset)
                 } else {
                     0
                 };
@@ -379,7 +385,7 @@ fn body_to_asm(
                         let scratch_register_1 = scratch_register_1.align(Width::Long);
 
                         let func_loc = allocator.location_of(func, idx).unwrap();
-                        let func_reg = load_if_needed(&mut result, func_loc, scratch_register_1);
+                        let func_reg = load_if_needed(&mut result, func_loc, scratch_register_1, dynamic_stack_offset);
 
                         result.push(Instruction::Branch(
                             instructions::Branch::branch_link_register(func_reg),
@@ -399,6 +405,10 @@ fn body_to_asm(
                     pop_stack(&mut result, allocated_variadic);
                 }
 
+                for spilled_reg in call_stack_spills.iter().rev() {
+                    pop_stack_spill(&mut result, *spilled_reg);
+                }
+
                 if let Some((val, width)) = dest {
                     let scratch_register_1 = scratch_register_1.align(*width);
 
@@ -412,9 +422,6 @@ fn body_to_asm(
                     store_if_needed(&mut result, val_loc, scratch_register_1);
                 }
 
-                for spilled_reg in call_stack_spills.iter().rev() {
-                    pop_stack_spill(&mut result, *spilled_reg);
-                }
 
             }
 

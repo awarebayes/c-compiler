@@ -1,6 +1,19 @@
 digraph SSA {
 rankdir=TB;
 node [shape=rectangle, fontname="Courier"];
-start_function_main [label=<start_function_main<BR ALIGN="LEFT"/>    	%_t0 =w #5<BR ALIGN="LEFT"/>    	%a.0 =w %_t0<BR ALIGN="LEFT"/>    	%_t1 =l s&#x27;A is %d\n&#x27;<BR ALIGN="LEFT"/>    	%_t2 =w %a.0<BR ALIGN="LEFT"/>    	%_t3 =w call %printf.0 with (param0 l %_t1, vparam1 w %_t2)<BR ALIGN="LEFT"/>    	%_t4 =w #0<BR ALIGN="LEFT"/>    	return w %_t4<BR ALIGN="LEFT"/>    >];
+start_function_main [label=<start_function_main<BR ALIGN="LEFT"/>    	%_t0 =w #4<BR ALIGN="LEFT"/>    	%b.0 =w %_t0<BR ALIGN="LEFT"/>    	%_t1 =w #6<BR ALIGN="LEFT"/>    	%c.0 =w %_t1<BR ALIGN="LEFT"/>    	%_t2 =w #4<BR ALIGN="LEFT"/>    	%a.0 =w %_t2<BR ALIGN="LEFT"/>    >];
+_l0 [label=<_l0<BR ALIGN="LEFT"/>    	%a.1 =w phi [%a.0, @start_function_main], [%a.2, @_l1]<BR ALIGN="LEFT"/>    	%_t3 =w %a.1<BR ALIGN="LEFT"/>    	%_t4 =w #0<BR ALIGN="LEFT"/>    	%_t5 =w %_t3 &gt; %_t4<BR ALIGN="LEFT"/>    	branchw %_t5: _l1 _l2<BR ALIGN="LEFT"/>    >];
+_l1 [label=<_l1<BR ALIGN="LEFT"/>    	%_t6 =l s&#x27;A is %d\n&#x27;<BR ALIGN="LEFT"/>    	%_t7 =w %a.1<BR ALIGN="LEFT"/>    	%_t8 =w call %printf.0 with (param0 l %_t6, vparam1 w %_t7)<BR ALIGN="LEFT"/>    	%_t9 =w #1<BR ALIGN="LEFT"/>    	%_t10 =w %a.1 - %_t9<BR ALIGN="LEFT"/>    	%a.2 =w %_t10<BR ALIGN="LEFT"/>    	%_t11 =w #4<BR ALIGN="LEFT"/>    	%_t12 =w %b.0 - %_t11<BR ALIGN="LEFT"/>    	%b.1 =w %_t12<BR ALIGN="LEFT"/>    	jump _l0<BR ALIGN="LEFT"/>    >];
+_l2 [label=<_l2<BR ALIGN="LEFT"/>    	%a.3 =w phi [%a.0, @start_function_main], [%a.2, @_l1]<BR ALIGN="LEFT"/>    	%b.2 =w phi [%b.0, @start_function_main], [%b.1, @_l1]<BR ALIGN="LEFT"/>    	%_t13 =w %b.2<BR ALIGN="LEFT"/>    	%_t14 =w %a.3 + %_t13<BR ALIGN="LEFT"/>    	%a.4 =w %_t14<BR ALIGN="LEFT"/>    	%_t15 =w %c.0<BR ALIGN="LEFT"/>    	%_t16 =w %a.4 + %_t15<BR ALIGN="LEFT"/>    	%a.5 =w %_t16<BR ALIGN="LEFT"/>    	%_t17 =w #0<BR ALIGN="LEFT"/>    	return w %_t17<BR ALIGN="LEFT"/>    >];
+_l0 -> _l1[label="true"];
+_l0 -> _l2[label="false"];
+start_function_main -> _l0;
+_l1 -> _l0;
 edge [color=red, style=dashed, constraint=false];
+start_function_main -> _l0[label="%a.0 -> phi"];
+_l1 -> _l0[label="%a.2 -> phi"];
+start_function_main -> _l2[label="%a.0 -> phi"];
+_l1 -> _l2[label="%a.2 -> phi"];
+start_function_main -> _l2[label="%b.0 -> phi"];
+_l1 -> _l2[label="%b.1 -> phi"];
 }
