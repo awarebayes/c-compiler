@@ -28,14 +28,6 @@ impl SymbolLookup {
         self.lookup.get(key)
     }
 
-    pub fn stack_size(&self) -> usize {
-        self.lookup
-            .values()
-            .map(|x| x.width.to_bytes())
-            .sum::<usize>()
-            .next_multiple_of(STACK_ALIGN)
-    }
-
     pub fn global_from_unit(toplevels: &[nodes::ToplevelItem]) -> Self {
         let mut lookup = HashMap::new();
         let mut string_liter_count: usize = 0;

@@ -90,7 +90,7 @@ fn alloc_stack_spill(instructions: &mut Vec<Instruction>, reg: Register) {
         op: instructions::ArithOp::Sub,
         dest: Register::stack_pointer(),
         left: Register::stack_pointer(),
-        right: instructions::RValue::Immediate(32), // FIXME MY MAN
+        right: instructions::RValue::Immediate(16), // FIXME MY MAN
     }));
     instructions.push(Instruction::Store {
         width: Width::Long,
@@ -109,7 +109,7 @@ fn pop_stack_spill(instructions: &mut Vec<Instruction>, reg: Register) {
         op: instructions::ArithOp::Add,
         dest: Register::stack_pointer(),
         left: Register::stack_pointer(),
-        right: instructions::RValue::Immediate(32),
+        right: instructions::RValue::Immediate(16),
     }));
 }
 
@@ -161,8 +161,8 @@ fn handle_variadic_params(instructions: &mut Vec<Instruction>, allocator: &Linea
         let param_reg = load_if_needed(instructions, param_loc, scratch_register_1, dynamic_offset + allocated as i64);
 
         instructions.push(Instruction::Store {
-            width: width,
-            source: param_reg.align(width),
+            width: Width::Long,
+            source: param_reg.align(Width::Long),
             operand: instructions::AddressingMode::stack_offset(8 * param_idx as i64)
         });
     }
@@ -340,11 +340,12 @@ fn body_to_asm(
                     result.push(Instruction::Branch(instructions::Branch::uncond(
                         instructions::Label(format!("return_{}", func_name)),
                     )))
+                } else {
+                    result.push(Instruction::Branch(instructions::Branch::uncond(
+                        instructions::Label(format!("return_{}", func_name)),
+                    )))
                 }
 
-                result.push(Instruction::Branch(instructions::Branch::uncond(
-                    instructions::Label(format!("return_{}", func_name)),
-                )))
             }
             nodes::Ssa::Jump(target) => {
                 result.push(Instruction::Branch(instructions::Branch::uncond((
@@ -370,7 +371,7 @@ fn body_to_asm(
                 for p in non_variadic_parameters.iter() {
                     if let Some(spill) = handle_param(&mut result, &allocator, p, idx, scratch_register_1, dynamic_stack_offset) {
                         call_stack_spills.push(spill);
-                        dynamic_stack_offset += 32;
+                        dynamic_stack_offset += 16;
                     }
                 }
 
@@ -402,10 +403,12 @@ fn body_to_asm(
                 }
 
                 if allocated_variadic > 0 {
+                    result.push(Instruction::Comment(format!("Variadic parameters pop")));
                     pop_stack(&mut result, allocated_variadic);
                 }
 
                 for spilled_reg in call_stack_spills.iter().rev() {
+                    result.push(Instruction::Comment(format!("Restoring register {} that was spilled", spilled_reg.to_string())));
                     pop_stack_spill(&mut result, *spilled_reg);
                 }
 

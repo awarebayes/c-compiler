@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::hash::Hash;
 
 use crate::{asmgen::aarch64::instructions::Register, ir::nodes::{self, Address, Ssa}};
 

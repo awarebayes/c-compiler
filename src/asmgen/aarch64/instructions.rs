@@ -372,7 +372,7 @@ impl ArithOp {
 }
 
 impl Register {
-    fn to_string(&self) -> String {
+    pub fn to_string(&self) -> String {
         match self.kind {
             RegisterKind::StackPointer => "sp".into(),
             _ => {
