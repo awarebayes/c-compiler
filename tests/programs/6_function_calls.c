@@ -1,3 +1,4 @@
+// === Source ===
 extern int printf( const char * format, ... );
 
 int four() {
@@ -14,6 +15,11 @@ int main() {
    int c = five();
    int d = b + c;
 
-   printf("Four plus five is %d\n", d);
+   printf("Four plus five is %d\n", b);
    return 0;
 }
+// === End Source ===
+
+// === Output ===
+// Four plus five is 9
+// === End Output ===

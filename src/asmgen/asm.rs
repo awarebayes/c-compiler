@@ -370,10 +370,8 @@ fn body_to_asm(
                 parameters
             } => {
 
-
                 let non_variadic_parameters = parameters.iter().filter(|x| !x.is_variadic).collect::<Vec<_>>();
                 let variadic_parameters = parameters.iter().filter(|x| x.is_variadic).collect::<Vec<_>>();
-
 
                 let used_registers = allocator.used_registers_at(idx);
 
@@ -410,13 +408,6 @@ fn body_to_asm(
                     }
                 }
 
-                if allocated_variadic > 0 {
-                    result.push(Instruction::Comment(format!("Variadic parameters pop")));
-                    pop_stack(&mut result, allocated_variadic);
-                }
-
-                pop_stack_spills(&mut result, &used_registers);
-
                 if let Some((val, width)) = dest {
                     let scratch_register_1 = scratch_register_1.align(*width);
 
@@ -430,7 +421,12 @@ fn body_to_asm(
                     store_if_needed(&mut result, val_loc, scratch_register_1);
                 }
 
+                if allocated_variadic > 0 {
+                    result.push(Instruction::Comment(format!("Variadic parameters pop")));
+                    pop_stack(&mut result, allocated_variadic);
+                }
 
+                pop_stack_spills(&mut result, &used_registers);
             }
 
             nodes::Ssa::Phi(_) => panic!("Phi functions should be eliminated at this stage!"),
