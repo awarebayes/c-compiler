@@ -50,10 +50,10 @@ sub sp, sp, 16
 // Spilling x0 which is in use
 str x0, [sp, 0]
 bl _four
+mov w5, w0
 // Popping x0 which was in use
 ldr x0, [sp, 0]
 add sp, sp, 16
-mov w5, w0
 mov w0, w5
 // 	%b.0 =w %_t0
 mov w1, w0
@@ -64,12 +64,12 @@ str x0, [sp, 0]
 // Spilling x1 which is in use
 str x1, [sp, 8]
 bl _five
+mov w5, w0
 // Popping x0 which was in use
 ldr x0, [sp, 0]
 // Popping x1 which was in use
 ldr x1, [sp, 8]
 add sp, sp, 16
-mov w5, w0
 mov w0, w5
 // 	%c.0 =w %_t1
 mov w2, w0
@@ -88,28 +88,28 @@ add x1, x1, sl0@PAGEOFF
 mov w2, w0
 // 	%_t7 =w call %printf.0 with (param0 l %_t5, vparam1 w %_t6)
 sub sp, sp, 32
-// Spilling x0 which is in use
-str x0, [sp, 0]
+// Spilling x2 which is in use
+str x2, [sp, 0]
 // Spilling x1 which is in use
 str x1, [sp, 8]
-// Spilling x2 which is in use
-str x2, [sp, 16]
+// Spilling x0 which is in use
+str x0, [sp, 16]
 // param0 l %_t5
 mov x0, x1
 sub sp, sp, 16
 // vparam1 w %_t6
 str x2, [sp, 0]
 bl _printf
+mov w5, w0
 // Variadic parameters pop
 add sp, sp, 16
-// Popping x0 which was in use
-ldr x0, [sp, 0]
+// Popping x2 which was in use
+ldr x2, [sp, 0]
 // Popping x1 which was in use
 ldr x1, [sp, 8]
-// Popping x2 which was in use
-ldr x2, [sp, 16]
+// Popping x0 which was in use
+ldr x0, [sp, 16]
 add sp, sp, 32
-mov w5, w0
 mov w0, w5
 // 	%_t8 =w #0
 mov w5, 0

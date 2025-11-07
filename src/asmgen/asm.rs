@@ -408,17 +408,13 @@ fn body_to_asm(
                     }
                 }
 
-                if let Some((val, width)) = dest {
+                if let Some((_, width)) = dest {
                     let scratch_register_1 = scratch_register_1.align(*width);
 
                     result.push(Instruction::Mov{
                         dest: scratch_register_1,
                         operand: Register::x0(*width).rvalue()
                     });
-
-                    let val_loc = allocator.location_of(val, idx).unwrap();
-
-                    store_if_needed(&mut result, val_loc, scratch_register_1);
                 }
 
                 if allocated_variadic > 0 {
@@ -427,6 +423,12 @@ fn body_to_asm(
                 }
 
                 pop_stack_spills(&mut result, &used_registers);
+
+                if let Some((val, width)) = dest {
+                    let scratch_register_1 = scratch_register_1.align(*width);
+                    let val_loc = allocator.location_of(val, idx).unwrap();
+                    store_if_needed(&mut result, val_loc, scratch_register_1);
+                }
             }
 
             nodes::Ssa::Phi(_) => panic!("Phi functions should be eliminated at this stage!"),

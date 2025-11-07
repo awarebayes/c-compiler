@@ -152,6 +152,34 @@ impl Register {
         }
     }
 
+    pub fn x10(width: Width) -> Self {
+        Register {
+            kind: RegisterKind::Corruptuble(CorruptibleRegister::X10),
+            width,
+        }
+    }
+
+    pub fn x11(width: Width) -> Self {
+        Register {
+            kind: RegisterKind::Corruptuble(CorruptibleRegister::X11),
+            width,
+        }
+    }
+
+    pub fn x12(width: Width) -> Self {
+        Register {
+            kind: RegisterKind::Corruptuble(CorruptibleRegister::X12),
+            width,
+        }
+    }
+
+    pub fn x13(width: Width) -> Self {
+        Register {
+            kind: RegisterKind::Corruptuble(CorruptibleRegister::X13),
+            width,
+        }
+    }
+
     pub fn frame_pointer() -> Self {
         Register {
             kind: RegisterKind::FramePointer,

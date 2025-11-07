@@ -15,7 +15,7 @@ int main() {
    int c = five();
    int d = b + c;
 
-   printf("Four plus five is %d\n", b);
+   printf("Four plus five is %d\n", d);
    return 0;
 }
 // === End Source ===
