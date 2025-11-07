@@ -77,6 +77,7 @@ pub enum Location {
     Spill(i64), // stack offset
 }
 
+#[derive(Debug)]
 pub struct Allocation {
     pub loc: Location,
     pub lifetime: Lifetime,
@@ -99,6 +100,17 @@ impl LinearScanRegisterAlloc {
 
     pub fn stack_size(&self) -> usize {
         self.next_spill_slot.abs() as usize
+    }
+
+    pub fn used_registers_at(&self, instr_idx: usize) -> Vec<Register> {
+        self.allocations.values().filter_map(|all| {
+            if all.lifetime.start <= instr_idx && all.lifetime.end >= instr_idx &&
+             let Location::Reg(r) = all.loc {
+                Some(r)
+            } else {
+                None
+            }
+        }).collect()
     }
 
     pub fn linear_scan(&mut self, lifetimes: &HashMap<Address, Lifetime>) {

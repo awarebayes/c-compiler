@@ -85,38 +85,51 @@ fn pop_stack(instructions: &mut Vec<Instruction>, bytes: usize) {
     }));
 }
 
-fn alloc_stack_spill(instructions: &mut Vec<Instruction>, reg: Register) {
+fn alloc_stack_spills(instructions: &mut Vec<Instruction>, regs: &[Register]) -> usize {
+    let stack_space = (regs.len() * 8).next_multiple_of(16);
     instructions.push(instructions::Instruction::Arith(instructions::Arith {
         op: instructions::ArithOp::Sub,
         dest: Register::stack_pointer(),
         left: Register::stack_pointer(),
-        right: instructions::RValue::Immediate(16), // FIXME MY MAN
+        right: instructions::RValue::Immediate(stack_space as i64), 
     }));
-    instructions.push(Instruction::Store {
-        width: Width::Long,
-        source: reg.align(Width::Long),
-        operand: instructions::AddressingMode::stack_offset(0),
-    });
+
+    for (idx, reg) in regs.iter().enumerate() {
+        instructions.push(Instruction::Comment(format!("Spilling {} which is in use", reg.to_string())));
+        instructions.push(Instruction::Store {
+            width: Width::Long,
+            source: reg.align(Width::Long),
+            operand: instructions::AddressingMode::stack_offset(8 * idx as i64),
+        });
+    }
+
+
+    stack_space
 }
 
-fn pop_stack_spill(instructions: &mut Vec<Instruction>, reg: Register) {
-    instructions.push(Instruction::Load {
-        width: Width::Long,
-        dest: reg.align(Width::Long),
-        operand: instructions::AddressingMode::stack_offset(0),
-    });
+fn pop_stack_spills(instructions: &mut Vec<Instruction>, regs: &[Register]) {
+    let stack_space = (regs.len() * 8).next_multiple_of(16);
+    for (idx, reg) in regs.iter().enumerate() {
+        instructions.push(Instruction::Comment(format!("Popping {} which was in use", reg.to_string())));
+        instructions.push(Instruction::Load {
+            width: Width::Long,
+            dest: reg.align(Width::Long),
+            operand: instructions::AddressingMode::stack_offset(8 * idx as i64),
+        });
+    }
+
+
     instructions.push(instructions::Instruction::Arith(instructions::Arith {
         op: instructions::ArithOp::Add,
         dest: Register::stack_pointer(),
         left: Register::stack_pointer(),
-        right: instructions::RValue::Immediate(16),
+        right: instructions::RValue::Immediate(stack_space as i64),
     }));
 }
 
-fn handle_param(instructions: &mut Vec<Instruction>, allocator: &LinearScanRegisterAlloc, param: &nodes::FunctionParameter, idx: usize, scratch_register_1: Register, dynamic_offset: i64) -> Option<Register> {
+fn handle_param(instructions: &mut Vec<Instruction>, allocator: &LinearScanRegisterAlloc, param: &nodes::FunctionParameter, idx: usize, scratch_register_1: Register, dynamic_offset: i64) {
     instructions.push(Instruction::Comment(param.to_ir_string()));
     assert!(!param.is_variadic);
-    let mut spill = None;
     let width = param.width;
     let arg_reg = match param.number {
         0 => Register::x0(width),
@@ -131,19 +144,15 @@ fn handle_param(instructions: &mut Vec<Instruction>, allocator: &LinearScanRegis
 
     // Maybe check if arg_reg is empty here?
     if arg_reg != param_reg {
-        instructions.push(Instruction::Comment("Register is occupied, spilling!".to_string()));
-
-        spill = Some(arg_reg.align(Width::Long));
-        
-        alloc_stack_spill(instructions, arg_reg.align(Width::Long));
+        // instructions.push(Instruction::Comment("Register is occupied, spilling!".to_string()));
+        // spill = Some(arg_reg.align(Width::Long));
+        // alloc_stack_spill(instructions, arg_reg.align(Width::Long));
 
         instructions.push(Instruction::Mov {
             dest: arg_reg,
             operand: param_reg.rvalue(),
         });
     }
-
-    return spill;
 }
 
 
@@ -361,18 +370,17 @@ fn body_to_asm(
                 parameters
             } => {
 
-                let mut call_stack_spills: Vec<Register> = vec![];
 
                 let non_variadic_parameters = parameters.iter().filter(|x| !x.is_variadic).collect::<Vec<_>>();
                 let variadic_parameters = parameters.iter().filter(|x| x.is_variadic).collect::<Vec<_>>();
 
-                let mut dynamic_stack_offset = 0;
+
+                let used_registers = allocator.used_registers_at(idx);
+
+                let dynamic_stack_offset = alloc_stack_spills(&mut result, &used_registers) as i64;
 
                 for p in non_variadic_parameters.iter() {
-                    if let Some(spill) = handle_param(&mut result, &allocator, p, idx, scratch_register_1, dynamic_stack_offset) {
-                        call_stack_spills.push(spill);
-                        dynamic_stack_offset += 16;
-                    }
+                    handle_param(&mut result, &allocator, p, idx, scratch_register_1, dynamic_stack_offset) 
                 }
 
                 let allocated_variadic = if !variadic_parameters.is_empty() {
@@ -407,10 +415,7 @@ fn body_to_asm(
                     pop_stack(&mut result, allocated_variadic);
                 }
 
-                for spilled_reg in call_stack_spills.iter().rev() {
-                    result.push(Instruction::Comment(format!("Restoring register {} that was spilled", spilled_reg.to_string())));
-                    pop_stack_spill(&mut result, *spilled_reg);
-                }
+                pop_stack_spills(&mut result, &used_registers);
 
                 if let Some((val, width)) = dest {
                     let scratch_register_1 = scratch_register_1.align(*width);
