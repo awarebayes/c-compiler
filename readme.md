@@ -16,7 +16,7 @@ C Compiler written in rust targeting aarch64 + Mach-O.
 Optimisations status
 
 - [x] Constant folding
-- [ ] Dead code elimination
+- [x] Dead code elimination
 
 C Language status 
 
