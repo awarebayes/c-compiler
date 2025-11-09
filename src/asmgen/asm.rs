@@ -1,5 +1,6 @@
 use crate::asmgen::aarch64::instructions;
 use crate::asmgen::aarch64::instructions::Instruction;
+use crate::asmgen::aarch64::instructions::RValue;
 use crate::asmgen::aarch64::instructions::Register;
 use crate::asmgen::aarch64::instructions::Symbol;
 use crate::asmgen::regalloc;
@@ -164,8 +165,16 @@ fn handle_variadic_params(instructions: &mut Vec<Instruction>, allocator: &Linea
         instructions.push(Instruction::Comment(param.to_ir_string()));
         let param_loc =  allocator.location_of(&param.value, idx).unwrap();
         let width = param.width;
+
         let scratch_register_1 = scratch_register_1.align(width);
         let param_reg = load_if_needed(instructions, param_loc, scratch_register_1, dynamic_offset + allocated as i64);
+        
+        if let Address::Constant(nodes::AddressConstant::Numeric(nc)) =  param.value {
+            instructions.push(Instruction::Mov {
+                dest: param_reg.align(Width::Long),
+                operand: RValue::Immediate(nc)
+            });
+        }
 
         instructions.push(Instruction::Store {
             width: Width::Long,
@@ -278,18 +287,29 @@ fn body_to_asm(
                 let scratch_register_3 = scratch_register_3.align(width);
 
                 let left_loc = allocator.location_of(&quad.left, idx).unwrap();
-                let right_loc = allocator.location_of(quad.right.as_ref().unwrap(), idx).unwrap();
+                let right_loc = allocator.location_of(quad.right.as_ref().unwrap(), idx);
                 let dest_loc = allocator.location_of(&quad.dest, idx).unwrap();
 
+                let rvalue = if let Some(right_loc) =  right_loc {
+                    let right_reg = load_if_needed(&mut result, right_loc, scratch_register_2, 0);
+                    right_reg.rvalue()
+                } else {
+                    if let Address::Constant(nodes::AddressConstant::Numeric(nc)) = quad.right.as_ref().unwrap() {
+                        RValue::Immediate(*nc)
+                    } else {
+                        panic!("WTF?")
+                    }
+                };
+
                 let left_reg = load_if_needed(&mut result, left_loc, scratch_register_1, 0);
-                let right_reg = load_if_needed(&mut result, right_loc, scratch_register_2, 0);
+
                 let dest_reg = empty_register(dest_loc, scratch_register_3);
 
                 if quad.op.is_cmp() {
                     let cond_op = instructions::ConditionalCode::try_from_nodes_op(quad.op);
                     result.push(Instruction::Cmp {
                         left: left_reg,
-                        right: right_reg.rvalue(),
+                        right: rvalue,
                     });
                     result.push(Instruction::CondSet {
                         dest: dest_reg,
@@ -301,7 +321,7 @@ fn body_to_asm(
                         op: mod_op,
                         dest: dest_reg,
                         left: left_reg,
-                        right: right_reg.rvalue(),
+                        right: rvalue,
                     }));
                 }
 

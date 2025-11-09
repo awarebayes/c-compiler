@@ -7,7 +7,7 @@ C Compiler written in rust targeting aarch64 + Mach-O.
 - [x] Semantic analysis, symbol table
 - [x] Intermediate Representation
 - [x] Single Static Assignment
-- [ ] IR Optimization
+- [x] IR Optimization
 - [x] Phi Elimination
 - [x] Assembly codegen
 - [x] Register Allocation (Linear Scan)
@@ -17,6 +17,8 @@ Optimisations status
 
 - [x] Constant folding
 - [x] Dead code elimination
+- [x] Copy elimination on virtual registers
+- [ ] Common subexpression elimination
 
 C Language status 
 
@@ -55,52 +57,71 @@ int main() {
 }
 ```
 
-IR SSA
+IR SSA ([QBE](https://c9x.me/compile/) inspired)
 
-```asm
+```c
+extern $printf = "printf": (l) -> w
 extern $puts = "puts": (l) -> w
 function w other_func () {
 @start_function_other_func:
-        %_t0 =w #5
-        %a.0 =w %_t0
+        %times.0 =w #5
 @_l0:
-        %a.1 =w phi [%a.0, @start_function_other_func], [%a.2, @_l1]
-        %_t1 =w %a.1
-        %_t2 =w #0
-        %_t3 =w %_t1 > %_t2
-        branch %_t0: _l1 _l2
+        %times.1 =w phi [%times.0, @start_function_other_func], [%times.2, @_l1]
+        %_t3 =w %times.1 > #0
+        branchw %_t3: _l1 _l2
 @_l1:
-        %_t4 =l s'a'
-        param0 l %_t4
-        %_t5 =w call %puts.0
-        %_t6 =w #1
-        %_t7 =w %a.1 - %_t6
-        %a.2 =w %_t7
+        %_t4 =l s'times is %d\n'
+        %_t6 =w call %printf.0 with (param0 l %_t4, vparam1 w %times.1)
+        %times.2 =w %times.1 - #1
         jump _l0
 @_l2:
-        %a.3 =w phi [%a.0, @start_function_other_func], [%a.2, @_l1]
-        %_t8 =w %a.3
-        return w %_t8
+        %times.3 =w phi [%times.0, @start_function_other_func], [%times.2, @_l1]
+        return w %times.3
 }
 
 function w main () {
 @start_function_main:
-        %_t0 =w call %other_func.0
-        %b.0 =w %_t0
+        %_t0 =w call %other_func.0 with ()
         %_t1 =l s'b'
-        param0 l %_t1
-        %_t2 =w call %puts.0
-        %_t3 =w call %other_func.0
-        %c.0 =w %_t3
-        %_t4 =w %b.0
-        %_t5 =w %c.0
-        %_t6 =w %_t4 + %_t5
-        %g.0 =w %_t6
+        %_t2 =w call %puts.0 with (param0 l %_t1)
+        %_t3 =w call %other_func.0 with ()
+        %g.0 =w %b.0 + %c.0
         %_t7 =l s'c'
-        param0 l %_t7
-        %_t8 =w call %puts.0
-        %_t9 =w %g.0
-        return w %_t9
+        %_t8 =w call %puts.0 with (param0 l %_t7)
+        return w %g.0
+}
+```
+
+Phi function elimination
+
+```c
+extern $printf = "printf": (l) -> w
+extern $puts = "puts": (l) -> w
+function w other_func () {
+@start_function_other_func:
+        %times.0 =w #5
+@_l0:
+        %_t3 =w %times.0 > #0
+        branchw %_t3: _l1 _l2
+@_l1:
+        %_t4 =l s'times is %d\n'
+        %_t6 =w call %printf.0 with (param0 l %_t4, vparam1 w %times.0)
+        %times.0 =w %times.0 - #1
+        jump _l0
+@_l2:
+        return w %times.0
+}
+
+function w main () {
+@start_function_main:
+        %_t0 =w call %other_func.0 with ()
+        %_t1 =l s'b'
+        %_t2 =w call %puts.0 with (param0 l %_t1)
+        %_t3 =w call %other_func.0 with ()
+        %g.0 =w %b.0 + %c.0
+        %_t7 =l s'c'
+        %_t8 =w call %puts.0 with (param0 l %_t7)
+        return w %g.0
 }
 ```
 
@@ -112,100 +133,160 @@ Aarch64 Mach-o asm
 
 ```asm
 .section __TEXT,__text
+.extern _printf
 .extern _puts
 .globl _other_func
 .globl _main
 _other_func:
 stp x29, x30, [sp, -16]!
 mov x29, sp
-sub sp, sp, 48
-mov w0, 5
-str w0, [sp, 0]
-ldr w0, [sp, 0]
-str w0, [sp, 4]
-L0:
-ldr w0, [sp, 4]
-str w0, [sp, 8]
-mov w0, 0
-str w0, [sp, 12]
-ldr w0, [sp, 8]
-ldr w1, [sp, 12]
-cmp w0, w1
-cset w0, gt
-str w0, [sp, 16]
-ldr w0, [sp, 16]
-cmp w0, 1
-beq L1
-bne L2
-L1:
-adrp x0, sl0@PAGE
-add x0, x0, sl0@PAGEOFF
-str x0, [sp, 20]
-ldr x0, [sp, 20]
-bl _puts
-str w0, [sp, 28]
-mov w0, 1
-str w0, [sp, 32]
-ldr w0, [sp, 4]
-ldr w1, [sp, 32]
-sub w0, w0, w1
-str w0, [sp, 36]
-ldr w0, [sp, 36]
-str w0, [sp, 4]
-b L0
-L2:
-ldr w0, [sp, 4]
-str w0, [sp, 40]
+sub sp, sp, 0
+// @start_function_other_func:
+start_function_other_func:
+// 	%times.0 =w #5
+mov w5, 5
+mov w0, w5
+// @_l0:
+L_other_func_0:
+// 	%_t3 =w %times.0 > #0
+cmp w0, 0
+cset w1, gt
+// 	branchw %_t3: _l1 _l2
+cmp w1, 1
+beq L_other_func_1
+bne L_other_func_2
+// @_l1:
+L_other_func_1:
+// 	%_t4 =l s'times is %d\n'
+adrp x1, sl0@PAGE
+add x1, x1, sl0@PAGEOFF
+// 	%_t6 =w call %printf.0 with (param0 l %_t4, vparam1 w %times.0)
+sub sp, sp, 32
+// Spilling x0 which is in use
+str x0, [sp, 0]
+// Spilling x2 which is in use
+str x2, [sp, 8]
+// Spilling x1 which is in use
+str x1, [sp, 16]
+sub sp, sp, 16
+// vparam1 w %times.0
+str x0, [sp, 0]
+// param0 l %_t4
+mov x0, x1
+bl _printf
+mov w5, w0
+// Variadic parameters pop
+add sp, sp, 16
+// Popping x0 which was in use
+ldr x0, [sp, 0]
+// Popping x2 which was in use
+ldr x2, [sp, 8]
+// Popping x1 which was in use
+ldr x1, [sp, 16]
+add sp, sp, 32
+mov w2, w5
+// 	%times.0 =w %times.0 - #1
+sub w0, w0, 1
+// 	jump _l0
+b L_other_func_0
+// @_l2:
+L_other_func_2:
+// 	return w %times.0
+mov w0, w0
+b return_other_func
 return_other_func:
-add sp, sp, 48
+add sp, sp, 0
 ldp x29, x30, [sp], 16
 ret
 _main:
 stp x29, x30, [sp, -16]!
 mov x29, sp
-sub sp, sp, 64
+sub sp, sp, 0
+// @start_function_main:
+start_function_main:
+// 	%b.0 =w call %other_func.0 with ()
+sub sp, sp, 16
+// Spilling x0 which is in use
+str x0, [sp, 0]
 bl _other_func
-str w0, [sp, 0]
-ldr w0, [sp, 0]
-str w0, [sp, 4]
-adrp x0, sl1@PAGE
-add x0, x0, sl1@PAGEOFF
-str x0, [sp, 8]
-ldr x0, [sp, 8]
+mov w5, w0
+// Popping x0 which was in use
+ldr x0, [sp, 0]
+add sp, sp, 16
+mov w0, w5
+// 	%_t1 =l s'b'
+adrp x1, sl1@PAGE
+add x1, x1, sl1@PAGEOFF
+// 	%_t2 =w call %puts.0 with (param0 l %_t1)
+sub sp, sp, 32
+// Spilling x2 which is in use
+str x2, [sp, 0]
+// Spilling x1 which is in use
+str x1, [sp, 8]
+// Spilling x0 which is in use
+str x0, [sp, 16]
+// param0 l %_t1
+mov x0, x1
 bl _puts
-str w0, [sp, 16]
+mov w5, w0
+// Popping x2 which was in use
+ldr x2, [sp, 0]
+// Popping x1 which was in use
+ldr x1, [sp, 8]
+// Popping x0 which was in use
+ldr x0, [sp, 16]
+add sp, sp, 32
+mov w2, w5
+// 	%c.0 =w call %other_func.0 with ()
+sub sp, sp, 16
+// Spilling x0 which is in use
+str x0, [sp, 0]
+// Spilling x1 which is in use
+str x1, [sp, 8]
 bl _other_func
-str w0, [sp, 20]
-ldr w0, [sp, 20]
-str w0, [sp, 24]
-ldr w0, [sp, 4]
-str w0, [sp, 28]
-ldr w0, [sp, 24]
-str w0, [sp, 32]
-ldr w0, [sp, 28]
-ldr w1, [sp, 32]
-add w0, w0, w1
-str w0, [sp, 36]
-ldr w0, [sp, 36]
-str w0, [sp, 40]
+mov w5, w0
+// Popping x0 which was in use
+ldr x0, [sp, 0]
+// Popping x1 which was in use
+ldr x1, [sp, 8]
+add sp, sp, 16
+mov w1, w5
+// 	%g.0 =w %b.0 + %c.0
+add w2, w0, w1
+// 	%_t7 =l s'c'
 adrp x0, sl2@PAGE
 add x0, x0, sl2@PAGEOFF
-str x0, [sp, 44]
-ldr x0, [sp, 44]
+// 	%_t8 =w call %puts.0 with (param0 l %_t7)
+sub sp, sp, 32
+// Spilling x0 which is in use
+str x0, [sp, 0]
+// Spilling x1 which is in use
+str x1, [sp, 8]
+// Spilling x2 which is in use
+str x2, [sp, 16]
+// param0 l %_t7
 bl _puts
-str w0, [sp, 52]
-ldr w0, [sp, 40]
-str w0, [sp, 56]
+mov w5, w0
+// Popping x0 which was in use
+ldr x0, [sp, 0]
+// Popping x1 which was in use
+ldr x1, [sp, 8]
+// Popping x2 which was in use
+ldr x2, [sp, 16]
+add sp, sp, 32
+mov w1, w5
+// 	return w %g.0
+mov w0, w2
+b return_main
 return_main:
-add sp, sp, 64
+add sp, sp, 0
 ldp x29, x30, [sp], 16
 ret
 .section __TEXT,__cstring
 sl2:
 .asciz "c"
-sl0:
-.asciz "a"
 sl1:
 .asciz "b"
-
+sl0:
+.asciz "times is %d\n"
 ```

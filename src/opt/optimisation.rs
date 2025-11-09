@@ -1,4 +1,4 @@
-use crate::{ir::nodes, opt::{constant_folding, dead_code_elimination, phi_elim}};
+use crate::{ir::nodes, opt::{constant_folding, copy_elimination, dead_code_elimination, phi_elim}};
 
 pub type OptimisationPassFn = fn(&[nodes::Ssa]) -> Vec<nodes::Ssa>;
 
@@ -16,10 +16,11 @@ impl<const N: usize> OptimisationLevel<N> {
     }
 }
 
-pub const O1: OptimisationLevel<3> = OptimisationLevel {
+pub const O1: OptimisationLevel<4> = OptimisationLevel {
     passes: [
         constant_folding::fold_constants,
         dead_code_elimination::eliminate_dead_code,
+        copy_elimination::copy_eliminate,
 
         // Make sure it is always at the end!
         phi_elim::eliminate_phi_body,

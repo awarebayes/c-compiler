@@ -5,6 +5,7 @@ mod constant_folding;
 mod dead_code_elimination;
 mod dataflow;
 mod controlflow;
+mod copy_elimination;
 
 pub fn run_o1(unit: &[nodes::ToplevelItem]) -> Vec<nodes::ToplevelItem> {
     unit.iter()
