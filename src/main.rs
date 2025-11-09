@@ -76,7 +76,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         println!("{}", ssa_text);
     }
 
-    let opt_ssa = opt::o1(&ssa);
+    let opt_ssa = opt::run_o1(&ssa);
 
     if args.graphviz {
         ir::graphviz_unit(&opt_ssa, "./graphviz");

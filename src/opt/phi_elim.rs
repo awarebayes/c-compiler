@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
-use crate::ir::{self, IrTextRepr, block_label, extract_phi_functions, ir_to_basic_blocks, nodes};
+use crate::{ir::{self, IrTextRepr, block_label, extract_phi_functions, ir_to_basic_blocks, nodes}};
 
-pub fn eliminate_phi_block(
+fn eliminate_phi_block(
     block: &[nodes::Ssa],
     mut added_end: Vec<nodes::Ssa>,
 ) -> Vec<nodes::Ssa> {

@@ -55,6 +55,12 @@ pub struct Lifetime {
     end: usize,
 }
 
+impl Lifetime {
+   pub fn intersects(&self, other: &Lifetime) -> bool {
+        self.start <= other.end && other.start <= self.end
+    }
+}
+
 pub fn analyze_lifetimes(
     body: &[Ssa]
 ) -> HashMap<Address, Lifetime> {
@@ -71,7 +77,7 @@ pub fn analyze_lifetimes(
     lifetimes
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Location {
     Reg(Register),
     Spill(i64), // stack offset
@@ -113,6 +119,26 @@ impl LinearScanRegisterAlloc {
         }).collect()
     }
 
+    fn recheck(&self) {
+        for a in &self.allocations {
+            for b in &self.allocations {
+                if a.0 == b.0 {
+                    continue;
+                }
+
+                let l1 = a.1.lifetime;
+                let l2 = b.1.lifetime;
+
+                let loc1 = a.1.loc;
+                let loc2 = b.1.loc;
+
+                if l1.intersects(&l2) {
+                    assert_ne!(loc1, loc2)
+                }
+            }
+        }
+    }
+
     pub fn linear_scan(&mut self, lifetimes: &HashMap<Address, Lifetime>) {
         // Sort intervals by start time
         let mut intervals: Vec<_> = lifetimes.iter().collect();
@@ -144,6 +170,8 @@ impl LinearScanRegisterAlloc {
                 });
             }
         }
+
+        self.recheck();
     }
 
 

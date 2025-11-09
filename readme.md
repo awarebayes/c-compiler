@@ -11,8 +11,15 @@ C Compiler written in rust targeting aarch64 + Mach-O.
 - [x] Phi Elimination
 - [x] Assembly codegen
 - [x] Register Allocation (Linear Scan)
+- [x] Integration tests
+
+Optimisations status
+
+- [x] Constant folding
+- [ ] Dead code elimination
 
 C Language status 
+
 - [x] Init statement
 - [x] Function definitions
 - [x] Function calls

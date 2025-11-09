@@ -35,6 +35,18 @@ impl Op {
             _ => false,
         }
     }
+
+    pub fn apply_constant(&self, left: i64, right: i64) -> i64 {
+        match self {
+            Self::Div => left / right,
+            Self::Mul => left * right,
+            Self::Plus => left + right,
+            Self::Minus => left - right,
+            Self::Eq => (left == right) as i64,
+            Self::Gt => (left > right) as i64,
+            Self::Lt => (left < right) as i64,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -66,6 +78,10 @@ impl Address {
 
     pub fn constant(c: AddressConstant) -> Self {
         Address::Constant(c)
+    }
+
+    pub fn constant_i64(c: i64) -> Self {
+        Address::Constant(AddressConstant::Numeric(c))
     }
 
     pub fn compiler_temp(n: usize) -> Self {
