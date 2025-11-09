@@ -25,13 +25,14 @@ C Language status
 - [x] Init statement
 - [x] Function definitions
 - [x] Function calls
+- [x] Variadic parameters
 - [x] Return
 - [x] If/Else conditionals
 - [x] Loops
 - [ ] Struct
 - [ ] Arrays / Pointers
 
-source
+## source
 
 ```c
 extern int printf(const char * format, ...);
@@ -57,7 +58,7 @@ int main() {
 }
 ```
 
-IR SSA ([QBE](https://c9x.me/compile/) inspired)
+## IR SSA ([QBE](https://c9x.me/compile/) inspired)
 
 ```c
 extern $printf = "printf": (l) -> w
@@ -92,7 +93,7 @@ function w main () {
 }
 ```
 
-Phi function elimination
+## Phi function elimination
 
 ```c
 extern $printf = "printf": (l) -> w
@@ -125,11 +126,11 @@ function w main () {
 }
 ```
 
-Graphviz generation
+## Graphviz generation
 
 <img width="1096" height="523" alt="Image" src="https://github.com/user-attachments/assets/165f1b2c-02c8-474c-84e9-98acbb17e192" />
 
-Aarch64 Mach-o asm
+## Aarch64 Mach-o asm
 
 ```asm
 .section __TEXT,__text

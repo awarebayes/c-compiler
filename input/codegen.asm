@@ -28,10 +28,10 @@ adrp x1, sl0@PAGE
 add x1, x1, sl0@PAGEOFF
 // 	%_t6 =w call %printf.0 with (param0 l %_t4, vparam1 w %times.0)
 sub sp, sp, 32
-// Spilling x0 which is in use
-str x0, [sp, 0]
 // Spilling x2 which is in use
-str x2, [sp, 8]
+str x2, [sp, 0]
+// Spilling x0 which is in use
+str x0, [sp, 8]
 // Spilling x1 which is in use
 str x1, [sp, 16]
 sub sp, sp, 16
@@ -43,10 +43,10 @@ bl _printf
 mov w5, w0
 // Variadic parameters pop
 add sp, sp, 16
-// Popping x0 which was in use
-ldr x0, [sp, 0]
 // Popping x2 which was in use
-ldr x2, [sp, 8]
+ldr x2, [sp, 0]
+// Popping x0 which was in use
+ldr x0, [sp, 8]
 // Popping x1 which was in use
 ldr x1, [sp, 16]
 add sp, sp, 32
@@ -87,20 +87,20 @@ add x1, x1, sl1@PAGEOFF
 sub sp, sp, 32
 // Spilling x2 which is in use
 str x2, [sp, 0]
-// Spilling x1 which is in use
-str x1, [sp, 8]
 // Spilling x0 which is in use
-str x0, [sp, 16]
+str x0, [sp, 8]
+// Spilling x1 which is in use
+str x1, [sp, 16]
 // param0 l %_t1
 mov x0, x1
 bl _puts
 mov w5, w0
 // Popping x2 which was in use
 ldr x2, [sp, 0]
-// Popping x1 which was in use
-ldr x1, [sp, 8]
 // Popping x0 which was in use
-ldr x0, [sp, 16]
+ldr x0, [sp, 8]
+// Popping x1 which was in use
+ldr x1, [sp, 16]
 add sp, sp, 32
 mov w2, w5
 // 	%c.0 =w call %other_func.0 with ()
@@ -124,21 +124,21 @@ adrp x0, sl2@PAGE
 add x0, x0, sl2@PAGEOFF
 // 	%_t8 =w call %puts.0 with (param0 l %_t7)
 sub sp, sp, 32
-// Spilling x0 which is in use
-str x0, [sp, 0]
-// Spilling x1 which is in use
-str x1, [sp, 8]
 // Spilling x2 which is in use
-str x2, [sp, 16]
+str x2, [sp, 0]
+// Spilling x0 which is in use
+str x0, [sp, 8]
+// Spilling x1 which is in use
+str x1, [sp, 16]
 // param0 l %_t7
 bl _puts
 mov w5, w0
-// Popping x0 which was in use
-ldr x0, [sp, 0]
-// Popping x1 which was in use
-ldr x1, [sp, 8]
 // Popping x2 which was in use
-ldr x2, [sp, 16]
+ldr x2, [sp, 0]
+// Popping x0 which was in use
+ldr x0, [sp, 8]
+// Popping x1 which was in use
+ldr x1, [sp, 16]
 add sp, sp, 32
 mov w1, w5
 // 	return w %g.0
@@ -149,9 +149,9 @@ add sp, sp, 0
 ldp x29, x30, [sp], 16
 ret
 .section __TEXT,__cstring
-sl2:
-.asciz "c"
-sl1:
-.asciz "b"
 sl0:
 .asciz "times is %d\n"
+sl1:
+.asciz "b"
+sl2:
+.asciz "c"
