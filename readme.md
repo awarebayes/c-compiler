@@ -60,6 +60,56 @@ int main() {
 
 ## IR SSA ([QBE](https://c9x.me/compile/) inspired)
 
+### Unoptimized IR
+
+```c
+extern $printf = "printf": (l) -> w
+extern $puts = "puts": (l) -> w
+function w other_func () {
+@start_function_other_func:
+        %_t0 =w #5
+        %times.0 =w %_t0
+@_l0:
+        %times.1 =w phi [%times.0, @start_function_other_func], [%times.2, @_l1]
+        %_t1 =w %times.1
+        %_t2 =w #0
+        %_t3 =w %_t1 > %_t2
+        branchw %_t3: _l1 _l2
+@_l1:
+        %_t4 =l s'times is %d\n'
+        %_t5 =w %times.1
+        %_t6 =w call %printf.0 with (param0 l %_t4, vparam1 w %_t5)
+        %_t7 =w #1
+        %_t8 =w %times.1 - %_t7
+        %times.2 =w %_t8
+        jump _l0
+@_l2:
+        %times.3 =w phi [%times.0, @start_function_other_func], [%times.2, @_l1]
+        %_t9 =w %times.3
+        return w %_t9
+}
+
+function w main () {
+@start_function_main:
+        %_t0 =w call %other_func.0 with ()
+        %b.0 =w %_t0
+        %_t1 =l s'b'
+        %_t2 =w call %puts.0 with (param0 l %_t1)
+        %_t3 =w call %other_func.0 with ()
+        %c.0 =w %_t3
+        %_t4 =w %b.0
+        %_t5 =w %c.0
+        %_t6 =w %_t4 + %_t5
+        %g.0 =w %_t6
+        %_t7 =l s'c'
+        %_t8 =w call %puts.0 with (param0 l %_t7)
+        %_t9 =w %g.0
+        return w %_t9
+}
+```
+
+### Optimized IR
+
 ```c
 extern $printf = "printf": (l) -> w
 extern $puts = "puts": (l) -> w
