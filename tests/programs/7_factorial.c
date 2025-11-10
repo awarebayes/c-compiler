@@ -1,3 +1,4 @@
+// === Source ===
 extern int printf(const char *format, ...);
 
 int fib(int n) {
@@ -13,3 +14,8 @@ int main() {
     printf("Fibonacci of 6 is: %d\n", result);
     return 0;
 }
+// === End Source ===
+
+// === Output ===
+// Fibonacci of 6 is: 8
+// === End Output ===

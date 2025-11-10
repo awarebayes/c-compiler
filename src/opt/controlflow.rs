@@ -19,7 +19,9 @@ impl ControlFlowGraph {
     pub fn new(body: &[nodes::Ssa]) -> Self {
         let blocks = ir_to_basic_blocks(body);
 
-        let mut out_blocks: Vec<BasicBlock> = blocks.iter().map(|b| BasicBlock {
+
+        let mut out_blocks: Vec<BasicBlock> = blocks.iter().map(|b| {
+            BasicBlock {
             label: {
                 let label = &b[0];
                 if let nodes::Ssa::Label(lab) = label {
@@ -30,7 +32,8 @@ impl ControlFlowGraph {
             },
             ir: b.clone(),
             used_variables: HashMap::new()
-        }).collect();
+        }}
+    ).collect();
 
         let mut control_adjacency: HashMap<usize, Vec<usize>> = HashMap::new();
 

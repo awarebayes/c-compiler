@@ -1,3 +1,6 @@
+use std::collections::HashMap;
+use std::rc::Rc;
+
 use crate::asmgen::aarch64::instructions;
 use crate::asmgen::aarch64::instructions::Instruction;
 use crate::asmgen::aarch64::instructions::RValue;
@@ -141,17 +144,28 @@ fn handle_param(instructions: &mut Vec<Instruction>, allocator: &LinearScanRegis
         _ => todo!(),
     };
 
-    let scratch_register_1 = scratch_register_1.align(width);
-    let param_loc = allocator.location_of(&param.value, idx).unwrap();
-    let param_reg = load_if_needed(instructions, param_loc, scratch_register_1, dynamic_offset);
+    match param.value {
+        Address::Constant(nodes::AddressConstant::Numeric(nc)) => {
+            instructions.push(Instruction::Mov {
+                dest: arg_reg,
+                operand: RValue::Immediate(nc)
+            });
+        },
+        _ => {
+            let scratch_register_1 = scratch_register_1.align(width);
+            let param_loc = allocator.location_of(&param.value, idx).unwrap();
+            let param_reg = load_if_needed(instructions, param_loc, scratch_register_1, dynamic_offset);
 
-    // Maybe check if arg_reg is empty here?
-    if arg_reg != param_reg {
-        instructions.push(Instruction::Mov {
-            dest: arg_reg,
-            operand: param_reg.rvalue(),
-        });
+            // Maybe check if arg_reg is empty here?
+            if arg_reg != param_reg {
+                instructions.push(Instruction::Mov {
+                    dest: arg_reg,
+                    operand: param_reg.rvalue(),
+                });
+            }
+        }
     }
+
 }
 
 
@@ -186,13 +200,37 @@ fn handle_variadic_params(instructions: &mut Vec<Instruction>, allocator: &Linea
     allocated
 }
 
+fn generate_precolor(parameters: &[(String, Width)], body_len: usize) -> HashMap<Address, regalloc::Allocation> {
+    let mut hm = HashMap::new();
+    for (p_idx, p) in parameters.iter().enumerate() {
+        let loc = match p_idx {
+            0 => Location::Reg(Register::x0(p.1)),
+            1 => Location::Reg(Register::x1(p.1)),
+            2 => Location::Reg(Register::x2(p.1)),
+            _ => todo!()
+        };
+        let alloc = regalloc::Allocation {
+            loc,
+            lifetime: regalloc::Lifetime {
+                start: 0,
+                end: body_len
+            }
+        };
+        hm.insert(Address::Source((Rc::new(p.0.clone()), 0)), alloc);
+    }
+    hm
+}
+
 fn body_to_asm(
     block: &[nodes::Ssa],
     func_name: &str,
+    parameters: &[(String, Width)],
     lookup: &SymbolLookup,
 ) -> Vec<instructions::Instruction> {
 
-    let lifetimes = analyze_lifetimes(block);
+    let parameter_names: Vec<String> = parameters.iter().map(|x| x.0.clone()).collect();
+
+    let lifetimes = analyze_lifetimes(block, &parameter_names);
 
     let mut allocator = LinearScanRegisterAlloc::new(vec![
         Register::x0(Width::Long),
@@ -200,7 +238,9 @@ fn body_to_asm(
         Register::x2(Width::Long),
         Register::x3(Width::Long),
         Register::x4(Width::Long),
-    ]);
+    ], 
+        generate_precolor(parameters, block.len())
+    );
 
     allocator.linear_scan(&lifetimes);
 
@@ -491,6 +531,7 @@ fn body_to_asm(
 pub fn convert_function_body_ir_to_asm(
     ir: &[nodes::Ssa],
     func_name: &str,
+    parameters: &[(String, Width)],
     global_lookup: &SymbolLookup,
 ) -> Vec<instructions::Instruction> {
     let lookup = global_lookup;
@@ -507,7 +548,7 @@ pub fn convert_function_body_ir_to_asm(
         operand: instructions::RValue::Register(Register::stack_pointer()),
     });
 
-    let asm = body_to_asm(ir, func_name, lookup);
+    let asm = body_to_asm(ir, func_name, parameters, lookup);
     instructions.extend(asm);
 
     instructions.push(instructions::Instruction::LoadPair {
@@ -529,7 +570,7 @@ pub fn convert_function_to_asm(
     instructions.push(instructions::Instruction::Label(
         "_".to_owned() + fd.name.as_str(),
     ));
-    instructions.extend(convert_function_body_ir_to_asm(&fd.body, &fd.name, lookup));
+    instructions.extend(convert_function_body_ir_to_asm(&fd.body, &fd.name, &fd.parameters, lookup));
 
     instructions
 }

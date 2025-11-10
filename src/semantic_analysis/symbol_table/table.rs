@@ -96,6 +96,7 @@ pub enum SymbolKind {
     },
     Function {
         parameters: Vec<SymbolType>,
+        parameter_names: Option<Vec<String>>,
         is_variadic: bool,
     },
 }

@@ -94,6 +94,13 @@ impl Address {
             _ => panic!("Not a source var"),
         }
     }
+
+    pub fn try_get_source(&self) -> Option<&str> {
+        match self {
+            Self::Source(s) => Some(&s.0),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]

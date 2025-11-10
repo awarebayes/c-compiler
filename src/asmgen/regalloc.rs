@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::{asmgen::aarch64::instructions::Register, ir::nodes::{self, Address, Ssa}};
+use crate::{asmgen::aarch64::instructions::Register, common::Width, ir::nodes::{self, Address, Ssa}};
 
 pub fn alive_addresses_in_ssa(ssa: &Ssa) -> Vec<Address> {
     match ssa {
@@ -51,8 +51,8 @@ pub fn alive_addresses_in_ssa(ssa: &Ssa) -> Vec<Address> {
 
 #[derive(Debug, Clone, Copy)]
 pub struct Lifetime {
-    start: usize,
-    end: usize,
+    pub start: usize,
+    pub end: usize,
 }
 
 impl Lifetime {
@@ -62,15 +62,25 @@ impl Lifetime {
 }
 
 pub fn analyze_lifetimes(
-    body: &[Ssa]
+    body: &[Ssa],
+    parameters: &[String]
 ) -> HashMap<Address, Lifetime> {
     let mut lifetimes = HashMap::new();
 
     for (idx, b) in body.iter().enumerate() {
         let alive_here = alive_addresses_in_ssa(b);
         for a in alive_here.iter() {
-            let lifetime = lifetimes.entry(a.clone()).or_insert_with(|| Lifetime { start: idx, end: idx });
-            lifetime.end = idx;
+            let mut need_add = true;
+            for p in parameters {
+                if let Some(svar)  = a.try_get_source() && svar == p {
+                    need_add = false;
+                    break;
+                }
+            }
+            if need_add {
+                let lifetime = lifetimes.entry(a.clone()).or_insert_with(|| Lifetime { start: idx, end: idx });
+                lifetime.end = idx;
+            }
         }
     }
 
@@ -96,10 +106,23 @@ pub struct LinearScanRegisterAlloc {
 }
 
 impl LinearScanRegisterAlloc {
-    pub fn new(available_regs: Vec<Register>) -> Self {
+    pub fn new(mut available_regs: Vec<Register>, precolor: HashMap<Address, Allocation>) -> Self {
+
+        available_regs = available_regs.iter().filter(|r| {
+            let was_precolored = precolor.values().find(|all| {
+                match all.loc {
+                    Location::Reg(inner_r) => {
+                        r.align(Width::Long) ==inner_r.align(Width::Long)
+                    },
+                    Location::Spill(_) => false
+                }
+            });
+            was_precolored.is_none()
+        }).copied().collect();
+
         Self {
             available_regs,
-            allocations: HashMap::new(),
+            allocations: precolor,
             next_spill_slot: 0,
         }
     }

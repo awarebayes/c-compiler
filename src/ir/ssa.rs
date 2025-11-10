@@ -296,6 +296,7 @@ impl SsaBuilder for &ast::Expression {
                     SymbolKind::Function {
                         parameters,
                         is_variadic,
+                        parameter_names: _
                     } => (parameters, *is_variadic),
                 };
                 if !is_variadic && ce.arguments.len() != parameters.len() {
@@ -828,9 +829,11 @@ impl SsaBuilder for &ast::CompoundStatement {
 }
 
 fn function_ssa(fd: &ast::FunctionDefinition, symbol_table: SymbolTableRef) -> ToplevelItem {
-    let current_context = symbol_table.borrow().current_scope.clone();
     let global_context = symbol_table.borrow().global_scope.clone();
-    let symbols = &current_context.borrow().symbols;
+
+    let current_context = symbol_table.borrow().current_scope.clone();
+    let children = current_context.borrow().children[0].clone();
+    let symbols = &children.borrow().symbols;
 
     let parameter_names: Vec<String> = fd
         .declarator

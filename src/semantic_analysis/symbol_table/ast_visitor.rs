@@ -74,6 +74,7 @@ impl Visitable for &ast::Declaration {
                     kind: table::SymbolKind::Function {
                         parameters: parameter_types,
                         is_variadic: func_dec.is_variadic,
+                        parameter_names: None,
                     },
                     type_info: table::SymbolType::try_from((
                         func_dec.declarator.as_ref(),
@@ -146,6 +147,7 @@ impl Visitable for &ast::FunctionDefinition {
             })
             .collect();
 
+
         let is_variadic = match &self.declarator {
             ast::FunctionDeclaratorField::FunctionDeclarator(fd) => fd.is_variadic,
             _ => panic!(),
@@ -156,6 +158,7 @@ impl Visitable for &ast::FunctionDefinition {
             kind: table::SymbolKind::Function {
                 parameters: parameter_symbols.clone(),
                 is_variadic: is_variadic,
+                parameter_names: Some(parameter_names.clone())
             },
             type_info: return_type,
             storage_class: StorageClass::Auto,

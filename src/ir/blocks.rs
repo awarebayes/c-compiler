@@ -5,28 +5,21 @@ use crate::ir::{IrTextRepr, nodes};
 pub type BasicBlock = Vec<nodes::Ssa>;
 
 pub fn ir_to_basic_blocks(ir: &[nodes::Ssa]) -> Vec<BasicBlock> {
-    let mut blocks = vec![];
-    let mut current_block = vec![];
+    let mut blocks = Vec::new();
+    let mut current_block = Vec::new();
 
     for node in ir {
-        match node {
-            nodes::Ssa::Label(_) => {
-                if !current_block.is_empty() {
-                    blocks.push(current_block);
-                    current_block = vec![];
-                }
-            }
-            nodes::Ssa::Return { value: _ } => {
-                current_block.push(node.clone());
-                if !current_block.is_empty() {
-                    blocks.push(current_block);
-                    current_block = vec![];
-                }
-            }
-            _ => (),
+        // Check if this node should end the current block
+        let should_end_block = matches!(node, nodes::Ssa::Label(_));
+        if should_end_block && !current_block.is_empty() {
+            blocks.push(std::mem::take(&mut current_block));
         }
-
+        
         current_block.push(node.clone());
+    }
+
+    if !current_block.is_empty() {
+        blocks.push(current_block);
     }
 
     blocks
@@ -52,7 +45,7 @@ pub fn ir_to_basic_blocks_labeled(ir: &[nodes::Ssa]) -> HashMap<String, BasicBlo
                     blocks.insert(prev_label.clone(), current_block);
                     current_block = vec![];
                 }
-            }
+           }
             _ => (),
         }
 
