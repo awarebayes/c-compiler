@@ -168,7 +168,7 @@ fn handle_variadic_params(instructions: &mut Vec<Instruction>, allocator: &Linea
 
         let scratch_register_1 = scratch_register_1.align(width);
         let param_reg = load_if_needed(instructions, param_loc, scratch_register_1, dynamic_offset + allocated as i64);
-        
+
         if let Address::Constant(nodes::AddressConstant::Numeric(nc)) =  param.value {
             instructions.push(Instruction::Mov {
                 dest: param_reg.align(Width::Long),
@@ -225,13 +225,22 @@ fn body_to_asm(
                 if let nodes::Address::Constant(nodes::AddressConstant::Numeric(num_const)) = source
                 {
                     let dest_loc = allocator.location_of(dest, idx).unwrap();
+                    match dest_loc {
+                        regalloc::Location::Reg(r) => {
+                            result.push(Instruction::Mov {
+                                dest: r.align(*width),
+                                operand: instructions::RValue::Immediate(*num_const),
+                            });
+                        },
+                        regalloc::Location::Spill(_) => {
+                            result.push(Instruction::Mov {
+                                dest: scratch_register_1.align(*width),
+                                operand: instructions::RValue::Immediate(*num_const),
+                            });
 
-                    result.push(Instruction::Mov {
-                        dest: scratch_register_1.align(*width),
-                        operand: instructions::RValue::Immediate(*num_const),
-                    });
-
-                    store_if_needed(&mut result, dest_loc, scratch_register_1.align(*width));
+                            store_if_needed(&mut result, dest_loc, scratch_register_1.align(*width));
+                        }
+                    }
                 } else if let nodes::Address::Constant(nodes::AddressConstant::StringLiteral(sl)) =
                     source
                 {
